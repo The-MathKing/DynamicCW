@@ -7,16 +7,16 @@ from torch_geometric.data import Data, Batch
 from dynamic_layers import LatentDynamicSimplicialConv, LatentStaticSimplicialConv
 
 class DynamicCWNetwork(nn.Module):
-    def __init__(self, in_channels, hidden_channels, out_classes):
+    def __init__(self, in_channels, hidden_channels, out_classes, edge_in_channels=1):
         super(DynamicCWNetwork, self).__init__()
         
         # 1. Initial Continuous Embedding
         self.initial_embedding = nn.Linear(in_channels, hidden_channels)
         
         # 2. Topological Block (exactly 3 layers)
-        self.conv1 = LatentDynamicSimplicialConv(hidden_channels, hidden_channels)
-        self.conv2 = LatentDynamicSimplicialConv(hidden_channels, hidden_channels)
-        self.conv3 = LatentDynamicSimplicialConv(hidden_channels, hidden_channels)
+        self.conv1 = LatentDynamicSimplicialConv(hidden_channels, hidden_channels, edge_in_channels)
+        self.conv2 = LatentDynamicSimplicialConv(hidden_channels, hidden_channels, edge_in_channels)
+        self.conv3 = LatentDynamicSimplicialConv(hidden_channels, hidden_channels, edge_in_channels)
         
         # 4. Classification Head
         self.mlp_lin1 = nn.Linear(hidden_channels, hidden_channels // 2)
@@ -43,16 +43,16 @@ class DynamicCWNetwork(nn.Module):
         return x
 
 class StaticCWNetwork(nn.Module):
-    def __init__(self, in_channels, hidden_channels, out_classes):
+    def __init__(self, in_channels, hidden_channels, out_classes, edge_in_channels=1):
         super(StaticCWNetwork, self).__init__()
         
         # 1. Initial Continuous Embedding
         self.initial_embedding = nn.Linear(in_channels, hidden_channels)
         
         # 2. Topological Block (exactly 3 layers) - STATIC ABLATION
-        self.conv1 = LatentStaticSimplicialConv(hidden_channels, hidden_channels)
-        self.conv2 = LatentStaticSimplicialConv(hidden_channels, hidden_channels)
-        self.conv3 = LatentStaticSimplicialConv(hidden_channels, hidden_channels)
+        self.conv1 = LatentStaticSimplicialConv(hidden_channels, hidden_channels, edge_in_channels)
+        self.conv2 = LatentStaticSimplicialConv(hidden_channels, hidden_channels, edge_in_channels)
+        self.conv3 = LatentStaticSimplicialConv(hidden_channels, hidden_channels, edge_in_channels)
         
         # 4. Classification Head
         self.mlp_lin1 = nn.Linear(hidden_channels, hidden_channels // 2)

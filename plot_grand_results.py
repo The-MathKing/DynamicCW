@@ -20,6 +20,9 @@ def generate_multi_dataset_plot():
     gin_accs = []
     static_cw_accs = []
     dyn_cw_accs = []
+    gin_errs = []
+    static_cw_errs = []
+    dyn_cw_errs = []
     
     # 1. Load NCI1 from ablation_statistics.json
     try:
@@ -29,6 +32,9 @@ def generate_multi_dataset_plot():
             gin_accs.append(nci_data['GINBaseline']['Accuracy']['Mean'])
             static_cw_accs.append(nci_data['StaticCWNetwork']['Accuracy']['Mean'])
             dyn_cw_accs.append(nci_data['DynamicCWNetwork']['Accuracy']['Mean'])
+            gin_errs.append(nci_data['GINBaseline']['Accuracy']['Std_Dev'])
+            static_cw_errs.append(nci_data['StaticCWNetwork']['Accuracy']['Std_Dev'])
+            dyn_cw_errs.append(nci_data['DynamicCWNetwork']['Accuracy']['Std_Dev'])
     except Exception as e:
         print(f"Warning: Could not load NCI1 data: {e}")
 
@@ -42,6 +48,9 @@ def generate_multi_dataset_plot():
                     gin_accs.append(grand_data[ds]['GINBaseline']['Mean_Accuracy'])
                     static_cw_accs.append(grand_data[ds]['StaticCWNetwork']['Mean_Accuracy'])
                     dyn_cw_accs.append(grand_data[ds]['DynamicCWNetwork']['Mean_Accuracy'])
+                    gin_errs.append(grand_data[ds]['GINBaseline']['Std_Dev'])
+                    static_cw_errs.append(grand_data[ds]['StaticCWNetwork']['Std_Dev'])
+                    dyn_cw_errs.append(grand_data[ds]['DynamicCWNetwork']['Std_Dev'])
     except Exception as e:
         print(f"Warning: Could not load grand data: {e}")
 
@@ -59,9 +68,9 @@ def generate_multi_dataset_plot():
     color_stat = '#f39c12'  # Orange
     color_dyn = '#c0392b'   # Crimson
     
-    rects1 = ax.bar(x - width, gin_accs, width, label='GIN Baseline (1-WL)', color=color_gin, edgecolor='black')
-    rects2 = ax.bar(x, static_cw_accs, width, label='StaticCW-Net (Ablation)', color=color_stat, edgecolor='black')
-    rects3 = ax.bar(x + width, dyn_cw_accs, width, label='DynamicCW-Net (Ours)', color=color_dyn, edgecolor='black')
+    rects1 = ax.bar(x - width, gin_accs, width, yerr=gin_errs, capsize=5, label='GIN Baseline (1-WL)', color=color_gin, edgecolor='black')
+    rects2 = ax.bar(x, static_cw_accs, width, yerr=static_cw_errs, capsize=5, label='StaticCW-Net (Ablation)', color=color_stat, edgecolor='black')
+    rects3 = ax.bar(x + width, dyn_cw_accs, width, yerr=dyn_cw_errs, capsize=5, label='DynamicCW-Net (Ours)', color=color_dyn, edgecolor='black')
 
     # Add some text for labels, title and custom x-axis tick labels, etc.
     ax.set_ylabel('Test Accuracy (%)')
@@ -78,7 +87,7 @@ def generate_multi_dataset_plot():
             height = rect.get_height()
             ax.annotate(f'{height:.1f}%',
                         xy=(rect.get_x() + rect.get_width() / 2, height),
-                        xytext=(0, 3),  # 3 points vertical offset
+                        xytext=(0, 15),  # offset above error bars
                         textcoords="offset points",
                         ha='center', va='bottom', fontsize=10, fontweight='bold')
 

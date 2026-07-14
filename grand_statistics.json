@@ -1,44 +1,44 @@
 {
     "MUTAG": {
         "GINBaseline": {
-            "Mean_Accuracy": 83.6842105263158,
-            "Std_Dev": 6.531407182100456
+            "Mean_Accuracy": 81.05263157894737,
+            "Std_Dev": 6.531407182100452
         },
         "StaticCWNetwork": {
-            "Mean_Accuracy": 83.15789473684211,
-            "Std_Dev": 3.938586722919938
+            "Mean_Accuracy": 87.89473684210526,
+            "Std_Dev": 2.105263157894738
         },
         "DynamicCWNetwork": {
-            "Mean_Accuracy": 82.10526315789473,
-            "Std_Dev": 5.367388961676617
+            "Mean_Accuracy": 85.26315789473685,
+            "Std_Dev": 3.1578947368421058
         }
     },
     "PROTEINS": {
         "GINBaseline": {
-            "Mean_Accuracy": 75.42600896860988,
-            "Std_Dev": 1.3119945146482326
+            "Mean_Accuracy": 75.24663677130044,
+            "Std_Dev": 2.3283865445286356
         },
         "StaticCWNetwork": {
-            "Mean_Accuracy": 73.99103139013452,
-            "Std_Dev": 2.6905829596412585
+            "Mean_Accuracy": 69.5067264573991,
+            "Std_Dev": 3.119735808237864
         },
         "DynamicCWNetwork": {
-            "Mean_Accuracy": 71.21076233183858,
-            "Std_Dev": 1.9526045791100668
+            "Mean_Accuracy": 69.95515695067266,
+            "Std_Dev": 2.9337089208602913
         }
     },
     "ENZYMES": {
         "GINBaseline": {
-            "Mean_Accuracy": 35.0,
-            "Std_Dev": 1.394433377556794
+            "Mean_Accuracy": 33.5,
+            "Std_Dev": 2.0682789409984768
         },
         "StaticCWNetwork": {
-            "Mean_Accuracy": 14.666666666666666,
-            "Std_Dev": 1.545603082582617
+            "Mean_Accuracy": 13.333333333333334,
+            "Std_Dev": 0.5270462766947297
         },
         "DynamicCWNetwork": {
-            "Mean_Accuracy": 22.833333333333332,
-            "Std_Dev": 5.390320542932079
+            "Mean_Accuracy": 19.5,
+            "Std_Dev": 4.84767985741633
         }
     }
 }

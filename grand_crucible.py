@@ -35,6 +35,7 @@ def run_grand_crucible():
         in_channels = base_dataset.num_node_features
         out_classes = base_dataset.num_classes
         hidden_channels = 32
+        edge_in_channels = base_dataset.num_edge_features if base_dataset.num_edge_features > 0 else 1
         
         grand_metrics[d_name] = {
             'GIN': [],
@@ -57,8 +58,8 @@ def run_grand_crucible():
             test_loader = DataLoader(test_dataset, batch_size=64, shuffle=False)
             
             gin_model = GINBaseline(in_channels, hidden_channels, out_classes).to(device)
-            cw_static_model = StaticCWNetwork(in_channels, hidden_channels, out_classes).to(device)
-            cw_dyn_model = DynamicCWNetwork(in_channels, hidden_channels, out_classes).to(device)
+            cw_static_model = StaticCWNetwork(in_channels, hidden_channels, out_classes, edge_in_channels).to(device)
+            cw_dyn_model = DynamicCWNetwork(in_channels, hidden_channels, out_classes, edge_in_channels).to(device)
             
             criterion = nn.CrossEntropyLoss()
             opt_gin = torch.optim.Adam(gin_model.parameters(), lr=0.001)

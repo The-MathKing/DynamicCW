@@ -4,7 +4,7 @@ import torch.nn.functional as F
 from torch_geometric.nn import MessagePassing
 
 class LatentDynamicSimplicialConv(MessagePassing):
-    def __init__(self, in_channels, out_channels):
+    def __init__(self, in_channels, out_channels, edge_in_channels=1):
         # We use aggr="add" to sum the messages
         super(LatentDynamicSimplicialConv, self).__init__(aggr='add')
         
@@ -13,11 +13,8 @@ class LatentDynamicSimplicialConv(MessagePassing):
         # Learnable beta for exponential decay, initialized to 1.0
         self.beta = nn.Parameter(torch.tensor(1.0))
         
-        # Learnable projection vector for the scalar curvature
-        self.w_curve = nn.Parameter(torch.Tensor(out_channels))
-        
-        # Initialize w_curve properly
-        nn.init.xavier_uniform_(self.w_curve.unsqueeze(0))
+        # Replaces w_curve: Projects multi-dimensional edge features to out_channels
+        self.lin_edge = nn.Linear(edge_in_channels, out_channels)
         
     def forward(self, x, edge_index, edge_attr):
         """
@@ -57,10 +54,10 @@ class LatentDynamicSimplicialConv(MessagePassing):
         # 3. Compute dynamic curvature scalar
         f_dynamic = edge_attr * decay
         
-        # 4. Project the scalar into the feature space using the learnable w_curve
-        # Output Message: W_feat * x_j + (F_dynamic * w_curve)
+        # 4. Project the scaled edge features into the feature space using lin_edge
+        # Output Message: W_feat * x_j + W_edge * F_dynamic
         # Note: x_j is already transformed by W_feat via self.lin_feat in forward()
-        message = x_j + (f_dynamic * self.w_curve)
+        message = x_j + self.lin_edge(f_dynamic)
         
         return message
 
@@ -69,16 +66,13 @@ class LatentStaticSimplicialConv(MessagePassing):
     Ablated version of the LatentDynamicSimplicialConv.
     Uses static edge curvature WITHOUT the exponential distance decay modifier.
     """
-    def __init__(self, in_channels, out_channels):
+    def __init__(self, in_channels, out_channels, edge_in_channels=1):
         super(LatentStaticSimplicialConv, self).__init__(aggr='add')
         
         self.lin_feat = nn.Linear(in_channels, out_channels)
         
-        # Learnable projection vector for the scalar curvature
-        self.w_curve = nn.Parameter(torch.Tensor(out_channels))
-        
-        # Initialize w_curve properly
-        nn.init.xavier_uniform_(self.w_curve.unsqueeze(0))
+        # Replaces w_curve: Projects multi-dimensional edge features to out_channels
+        self.lin_edge = nn.Linear(edge_in_channels, out_channels)
         
     def forward(self, x, edge_index, edge_attr):
         x = self.lin_feat(x)
@@ -91,5 +85,5 @@ class LatentStaticSimplicialConv(MessagePassing):
         
     def message(self, x_j, edge_attr):
         # ABLATION KILLED THE DYNAMIC DECAY
-        message = x_j + (edge_attr * self.w_curve)
+        message = x_j + self.lin_edge(edge_attr)
         return message

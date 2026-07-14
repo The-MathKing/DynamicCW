@@ -53,8 +53,14 @@ def compute_forman_ricci(data):
     # Calculate Augmented Forman-Ricci curvature
     curvature = 4.0 - deg[u] - deg[v] + 3.0 * num_triangles + num_4_cliques
     
-    # Store as edge_attr (requires shape [num_edges, 1])
-    data.edge_attr = curvature.view(-1, 1)
+    curv = curvature.view(-1, 1)
+    if data.edge_attr is not None:
+        if data.edge_attr.dim() == 1:
+            data.edge_attr = data.edge_attr.view(-1, 1)
+        data.edge_attr = torch.cat([data.edge_attr, curv], dim=-1)
+    else:
+        data.edge_attr = curv
+        
     return data
 
 class FormanRicciTransform(object):
