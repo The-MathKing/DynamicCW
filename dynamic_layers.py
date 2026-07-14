@@ -63,3 +63,33 @@ class LatentDynamicSimplicialConv(MessagePassing):
         message = x_j + (f_dynamic * self.w_curve)
         
         return message
+
+class LatentStaticSimplicialConv(MessagePassing):
+    """
+    Ablated version of the LatentDynamicSimplicialConv.
+    Uses static edge curvature WITHOUT the exponential distance decay modifier.
+    """
+    def __init__(self, in_channels, out_channels):
+        super(LatentStaticSimplicialConv, self).__init__(aggr='add')
+        
+        self.lin_feat = nn.Linear(in_channels, out_channels)
+        
+        # Learnable projection vector for the scalar curvature
+        self.w_curve = nn.Parameter(torch.Tensor(out_channels))
+        
+        # Initialize w_curve properly
+        nn.init.xavier_uniform_(self.w_curve.unsqueeze(0))
+        
+    def forward(self, x, edge_index, edge_attr):
+        x = self.lin_feat(x)
+        if edge_attr.dim() == 1:
+            edge_attr = edge_attr.view(-1, 1)
+            
+        out = self.propagate(edge_index, x=x, edge_attr=edge_attr)
+        out = out + x
+        return F.elu(out)
+        
+    def message(self, x_j, edge_attr):
+        # ABLATION KILLED THE DYNAMIC DECAY
+        message = x_j + (edge_attr * self.w_curve)
+        return message

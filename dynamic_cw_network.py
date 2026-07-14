@@ -4,7 +4,7 @@ import torch.nn.functional as F
 from torch_geometric.nn import global_add_pool
 from torch_geometric.data import Data, Batch
 
-from dynamic_layers import LatentDynamicSimplicialConv
+from dynamic_layers import LatentDynamicSimplicialConv, LatentStaticSimplicialConv
 
 class DynamicCWNetwork(nn.Module):
     def __init__(self, in_channels, hidden_channels, out_classes):
@@ -36,6 +36,38 @@ class DynamicCWNetwork(nn.Module):
         x = global_add_pool(x, batch)
         
         # Map pooled graph embedding to final output using the MLP
+        x = F.elu(self.mlp_lin1(x))
+        x = self.dropout(x)
+        x = self.mlp_lin2(x)
+        
+        return x
+
+class StaticCWNetwork(nn.Module):
+    def __init__(self, in_channels, hidden_channels, out_classes):
+        super(StaticCWNetwork, self).__init__()
+        
+        # 1. Initial Continuous Embedding
+        self.initial_embedding = nn.Linear(in_channels, hidden_channels)
+        
+        # 2. Topological Block (exactly 3 layers) - STATIC ABLATION
+        self.conv1 = LatentStaticSimplicialConv(hidden_channels, hidden_channels)
+        self.conv2 = LatentStaticSimplicialConv(hidden_channels, hidden_channels)
+        self.conv3 = LatentStaticSimplicialConv(hidden_channels, hidden_channels)
+        
+        # 4. Classification Head
+        self.mlp_lin1 = nn.Linear(hidden_channels, hidden_channels // 2)
+        self.dropout = nn.Dropout(p=0.5)
+        self.mlp_lin2 = nn.Linear(hidden_channels // 2, out_classes)
+        
+    def forward(self, x, edge_index, edge_attr, batch):
+        x = F.elu(self.initial_embedding(x))
+        
+        x = self.conv1(x, edge_index, edge_attr)
+        x = self.conv2(x, edge_index, edge_attr)
+        x = self.conv3(x, edge_index, edge_attr)
+        
+        x = global_add_pool(x, batch)
+        
         x = F.elu(self.mlp_lin1(x))
         x = self.dropout(x)
         x = self.mlp_lin2(x)

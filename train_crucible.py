@@ -18,8 +18,8 @@ from dynamic_cw_network import DynamicCWNetwork
 # ==========================================
 def compute_forman_ricci(data):
     """
-    Computes the static combinatorial Forman-Ricci curvature:
-    4 - deg(u) - deg(v) + 3 * num_triangles(e)
+    Computes the Augmented combinatorial Forman-Ricci curvature:
+    4 - deg(u) - deg(v) + 3 * num_triangles(e) + num_4_cliques(e)
     Appends this as edge_attr.
     """
     edge_index = data.edge_index
@@ -39,8 +39,19 @@ def compute_forman_ricci(data):
     v = edge_index[1]
     num_triangles = adj_squared[u, v]
     
-    # Calculate static Forman-Ricci curvature
-    curvature = 4.0 - deg[u] - deg[v] + 3.0 * num_triangles
+    # Augmented topological metric: 4-cliques
+    # A 4-clique containing edge (u,v) exists if common neighbors of u and v share an edge.
+    num_4_cliques = torch.zeros(edge_index.shape[1], dtype=torch.float)
+    for i in range(edge_index.shape[1]):
+        ui = edge_index[0, i]
+        vi = edge_index[1, i]
+        common = torch.where((adj[ui] * adj[vi]) > 0)[0]
+        if len(common) >= 2:
+            sub_adj = adj[common][:, common]
+            num_4_cliques[i] = sub_adj.sum() / 2.0
+            
+    # Calculate Augmented Forman-Ricci curvature
+    curvature = 4.0 - deg[u] - deg[v] + 3.0 * num_triangles + num_4_cliques
     
     # Store as edge_attr (requires shape [num_edges, 1])
     data.edge_attr = curvature.view(-1, 1)
