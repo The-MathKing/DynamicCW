@@ -1,0 +1,44 @@
+{
+    "GINBaseline": {
+        "Accuracy": {
+            "Mean": 72.4087591240876,
+            "Std_Dev": 0.9622248142717852
+        },
+        "F1_Macro": {
+            "Mean": 0.7226898060107322,
+            "Std_Dev": 0.008738989792553848
+        },
+        "Average_Runtime_Per_Epoch_Sec": {
+            "Mean": 0.3212343604564667,
+            "Std_Dev": 0.02645143303902429
+        }
+    },
+    "StaticCWNetwork": {
+        "Accuracy": {
+            "Mean": 76.66666666666666,
+            "Std_Dev": 0.9529516315117352
+        },
+        "F1_Macro": {
+            "Mean": 0.7655949544926013,
+            "Std_Dev": 0.010455462157948714
+        },
+        "Average_Runtime_Per_Epoch_Sec": {
+            "Mean": 0.28121104454994206,
+            "Std_Dev": 0.02333373381902808
+        }
+    },
+    "DynamicCWNetwork": {
+        "Accuracy": {
+            "Mean": 76.61800486618004,
+            "Std_Dev": 0.9652960790694582
+        },
+        "F1_Macro": {
+            "Mean": 0.7659903946031559,
+            "Std_Dev": 0.00954512121576269
+        },
+        "Average_Runtime_Per_Epoch_Sec": {
+            "Mean": 0.3869053795337677,
+            "Std_Dev": 0.038215777533613715
+        }
+    }
+}
