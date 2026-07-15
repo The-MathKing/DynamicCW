@@ -1,0 +1,13 @@
+{
+    "best_config": {
+        "lr": 0.01,
+        "hidden_dim": 16,
+        "gating": "curvature"
+    },
+    "baseline_gcn_mean": 1.0,
+    "baseline_gcn_std": 0.0,
+    "mpsn_mean": 1.0,
+    "mpsn_std": 0.0,
+    "t_stat": NaN,
+    "p_value": NaN
+}

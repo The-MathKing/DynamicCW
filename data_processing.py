@@ -1,3 +1,9 @@
+"""
+Data Preprocessing module used for testing.
+Handles the heavy lifting of mapping standard PyG geometric graphs into 
+higher-dimensional TopoNetX Simplicial Complexes (up to 3-cells) and 
+computing the discrete Forman-Ricci Curvature for the 1-cells.
+"""
 import torch
 import networkx as nx
 import toponetx as tnx

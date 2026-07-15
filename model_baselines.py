@@ -1,3 +1,8 @@
+"""
+Baseline architectures module used for testing.
+Contains the standard GCN (Graph Convolutional Network) implementation 
+used as the primary baseline for the N=10 statistical validation tests.
+"""
 import torch
 import torch.nn as nn
 import torch.nn.functional as F

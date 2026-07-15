@@ -1,3 +1,9 @@
+"""
+Training utilities module used during testing.
+Contains helper functions to extract incidence matrices (B1, B2) from 
+simplicial complexes, preprocess datasets, and execute standard training 
+and testing loops for Graph Neural Networks.
+"""
 import torch
 import torch.nn as nn
 import torch.optim as optim

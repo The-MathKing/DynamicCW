@@ -1,3 +1,8 @@
+"""
+Adversarial noise injection module used for testing.
+Contains functions to perturb standard graphs by dropping/adding edges 
+or deliberately breaking cycles to test the structural robustness of the model.
+"""
 import torch
 import random
 import networkx as nx

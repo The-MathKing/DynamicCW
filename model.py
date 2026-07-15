@@ -1,3 +1,9 @@
+"""
+Core Model Architecture module used for testing.
+Defines the `CurvatureMPSN` and `CurvatureWeightedSimplicialConv` classes, 
+which implement the novel discrete Ricci flow and CW complex 
+message passing networks being evaluated in the research paper.
+"""
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
