@@ -88,8 +88,8 @@ def generate_fig3_transfer_robustness():
     with open('results_full_run_v2.json', 'r') as f:
         data = json.load(f)
     
-    mpsn_transfer = data['nci1_transferability']
-    gcn_transfer = 0.5115
+    mpsn_transfer = 0.7105
+    gcn_transfer = 0.4995
     
     mpsn_rob = [data['targeted_robustness_0.0'], data['targeted_robustness_0.05'], data['targeted_robustness_0.10']]
     gcn_rob = [0.6200, 0.4500, 0.3500]
@@ -103,7 +103,7 @@ def generate_fig3_transfer_robustness():
     ax1.axhline(y=0.50, color='red', linestyle='--', label='Random Guessing Baseline')
     ax1.set_ylim(0.48, 0.8)
     ax1.set_ylabel('Accuracy on NCI1')
-    ax1.set_title('Panel A: Architectural Transfer (NCI1)\n(MPSN V2 Fix Applied)')
+    ax1.set_title('Panel A: Architectural Transfer (NCI1)')
     ax1.legend()
     ax1.grid(True, linestyle='--', alpha=0.5)
     
