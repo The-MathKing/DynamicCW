@@ -1,0 +1,11 @@
+{
+    "isomorphism_l2_distance": 0.0,
+    "targeted_robustness_0.0": 0.48661800486618007,
+    "targeted_robustness_0.05": 0.5936739659367397,
+    "targeted_robustness_0.10": 0.48661800486618007,
+    "nci1_transferability": 0.656934306569343,
+    "latency": {
+        "layer_1_ms": 0.11372566223144531,
+        "layer_2_ms": 0.10919570922851562
+    }
+}
