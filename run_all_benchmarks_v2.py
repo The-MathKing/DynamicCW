@@ -52,15 +52,27 @@ def process_graph(G):
         frc_dict = sc.get_simplex_attributes('frc')
         frc_list = [frc_dict[tuple(edge)] for edge in sc.skeleton(1)]
         frc_weights = torch.tensor(frc_list, dtype=torch.float32).unsqueeze(1)
+        
+        B1_d = B1.to_dense() if B1.is_sparse else B1
+        B2_d = B2.to_dense() if B2.is_sparse else B2
+        L1 = torch.matmul(B1_d.t(), B1_d) + torch.matmul(B2_d, B2_d.t())
+        eigvals, eigvecs = torch.linalg.eigh(L1)
+        k = 8
+        if eigvecs.shape[1] >= k:
+            hlpe = eigvecs[:, :k]
+        else:
+            hlpe = torch.nn.functional.pad(eigvecs, (0, k - eigvecs.shape[1]))
     else:
         frc_weights = torch.empty((0, 1))
-    return x_0, B1, B2, frc_weights
+        hlpe = torch.empty((0, 8))
+    return x_0, B1, B2, frc_weights, hlpe
+
 
 def test_isomorphism():
     print("\n--- 1. SRG Isomorphism Test ---")
     G1, G2 = generate_srgs()
-    x0_1, B1_1, B2_1, frc_1 = process_graph(G1)
-    x0_2, B1_2, B2_2, frc_2 = process_graph(G2)
+    x0_1, B1_1, B2_1, frc_1, hlpe_1 = process_graph(G1)
+    x0_2, B1_2, B2_2, frc_2, hlpe_2 = process_graph(G2)
     
     set_seed(42)
     model = CurvatureMPSN(num_node_features=1, hidden_dim=32, num_classes=2, gating='curvature')
@@ -74,8 +86,8 @@ def test_isomorphism():
     model.eval()
     
     with torch.no_grad():
-        out1 = model(x0_1, None, None, B1_1, B2_1, frc_1, None, None, None)
-        out2 = model(x0_2, None, None, B1_2, B2_2, frc_2, None, None, None)
+        out1 = model(x0_1, hlpe_1, None, B1_1, B2_1, frc_1, None, None, None)
+        out2 = model(x0_2, hlpe_2, None, B1_2, B2_2, frc_2, None, None, None)
         
     distance = torch.norm(out1 - out2, p=2).item()
     print(f"L2 Metric Distance: {distance:.6f}")
@@ -166,13 +178,13 @@ def test_latency(device):
             data = d
             break
             
-    x0, B1, B2, frc = process_graph(to_networkx(data, to_undirected=True))
+    x0, B1, B2, frc, hlpe = process_graph(to_networkx(data, to_undirected=True))
     model = CurvatureMPSN(num_node_features=1, hidden_dim=32, num_classes=2, gating='curvature')
     model.eval()
     
     with torch.no_grad():
         x_0 = model.node_embedding(x0)
-        x_1 = model.edge_embedding(torch.ones((B1.shape[1], 1)))
+        x_1 = model.edge_embedding(hlpe)
         x_2 = model.triangle_embedding(torch.ones((B2.shape[1], 1)))
     
     # Warmup
