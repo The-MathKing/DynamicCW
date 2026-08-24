@@ -172,7 +172,7 @@ class CurvatureMPSN(nn.Module):
     def __init__(self, num_node_features, hidden_dim, num_classes, gating='vector'):
         super(CurvatureMPSN, self).__init__()
         self.node_embedding = nn.Linear(num_node_features, hidden_dim)
-        self.edge_embedding = nn.Linear(1, hidden_dim) 
+        self.edge_embedding = nn.Linear(8, hidden_dim) 
         self.triangle_embedding = nn.Linear(1, hidden_dim)
         self.conv1 = CurvatureWeightedSimplicialConv(hidden_dim, hidden_dim, gating=gating)
         self.conv2 = CurvatureWeightedSimplicialConv(hidden_dim, hidden_dim, gating=gating)
@@ -186,7 +186,7 @@ class CurvatureMPSN(nn.Module):
     def forward(self, x_0, x_1, x_2, incidence_1, incidence_2, frc_weights, batch_0, batch_1, batch_2):
         x_0 = self.node_embedding(x_0)
         if x_1 is None:
-            x_1 = torch.ones((incidence_1.shape[1], 1), device=x_0.device)
+            x_1 = torch.zeros((incidence_1.shape[1], 8), device=x_0.device)
         x_1 = self.edge_embedding(x_1)
         if x_2 is None:
             x_2 = torch.ones((incidence_2.shape[1], 1), device=x_0.device)
@@ -195,13 +195,13 @@ class CurvatureMPSN(nn.Module):
         x_0, x_1, x_2 = self.conv1(x_0, x_1, x_2, incidence_1, incidence_2, frc_weights)
         x_0, x_1, x_2 = self.conv2(x_0, x_1, x_2, incidence_1, incidence_2, frc_weights)
         
-        from torch_geometric.nn import global_add_pool
+        from torch_geometric.nn import global_mean_pool
         def safe_add(x, batch):
             if x.shape[0] == 0:
                 return torch.zeros((1, x.shape[1]), device=x.device)
             if batch is not None:
-                return global_add_pool(x, batch)
-            return torch.sum(x, dim=0, keepdim=True)
+                return global_mean_pool(x, batch)
+            return torch.mean(x, dim=0, keepdim=True)
         
         pooled_0 = safe_add(x_0, batch_0)
         pooled_1 = safe_add(x_1, batch_1)

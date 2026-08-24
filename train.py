@@ -63,8 +63,21 @@ def _process_single_graph(args):
         frc_dict = sc.get_simplex_attributes('frc')
         frc_list = [frc_dict[tuple(edge)] for edge in sc.skeleton(1)]
         frc_weights = torch.tensor(frc_list, dtype=torch.float32).unsqueeze(1)
+        
+        # Compute Hodge 1-Laplacian Positional Encodings
+        B1_d = B1.to_dense() if B1.is_sparse else B1
+        B2_d = B2.to_dense() if B2.is_sparse else B2
+        L1 = torch.matmul(B1_d.t(), B1_d) + torch.matmul(B2_d, B2_d.t())
+        eigvals, eigvecs = torch.linalg.eigh(L1)
+        k = 8
+        if eigvecs.shape[1] >= k:
+            hlpe = eigvecs[:, :k]
+        else:
+            hlpe = torch.nn.functional.pad(eigvecs, (0, k - eigvecs.shape[1]))
     else:
         frc_weights = torch.empty((0, 1))
+        hlpe = torch.empty((0, 8))
+        
         
     return {
         'x_0': x_0,
@@ -72,6 +85,7 @@ def _process_single_graph(args):
         'B1': B1,
         'B2': B2,
         'frc': frc_weights,
+        'hlpe': hlpe,
         'y': data.y
     }
 
@@ -109,7 +123,7 @@ def train_epoch(model, optimizer, criterion, train_data, device, is_gcn=False):
             out = model(data['x_0'].to(device), data['edge_index'].to(device))
         else:
             # MPSN needs incidence matrices and FRC
-            out = model(data['x_0'].to(device), None, None, 
+            out = model(data['x_0'].to(device), data['hlpe'].to(device) if 'hlpe' in data else None, None, 
                         data['B1'].to(device), data['B2'].to(device), 
                         data['frc'].to(device), None, None, None)
             
@@ -135,7 +149,7 @@ def test(model, criterion, test_data, device, is_gcn=False):
             if is_gcn:
                 out = model(data['x_0'].to(device), data['edge_index'].to(device))
             else:
-                out = model(data['x_0'].to(device), None, None, 
+                out = model(data['x_0'].to(device), data['hlpe'].to(device) if 'hlpe' in data else None, None, 
                             data['B1'].to(device), data['B2'].to(device), 
                             data['frc'].to(device), None, None, None)
                 
