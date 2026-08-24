@@ -31,7 +31,7 @@ def process(data):
     B1, B2 = get_incidence_matrices(sc)
     
     if sc.dim >= 1:
-        frc_dict = sc.get_simplex_attributes('frc')
+        frc_dict = sc.get_cell_attributes('frc', rank=1)
         frc_list = [frc_dict[tuple(edge)] for edge in sc.skeleton(1)]
         frc_weights = torch.tensor(frc_list, dtype=torch.float32).unsqueeze(1)
     else:

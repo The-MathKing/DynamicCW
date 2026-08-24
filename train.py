@@ -60,7 +60,7 @@ def _process_single_graph(args):
         x_0 = torch.ones((len(sc.skeleton(0)), 1))
         
     if sc.dim >= 1:
-        frc_dict = sc.get_simplex_attributes('frc')
+        frc_dict = sc.get_cell_attributes('frc', rank=1)
         frc_list = [frc_dict[tuple(edge)] for edge in sc.skeleton(1)]
         frc_weights = torch.tensor(frc_list, dtype=torch.float32).unsqueeze(1)
         

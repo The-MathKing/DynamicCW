@@ -26,56 +26,42 @@ def compute_forman_ricci_curvature(G, edge):
     frc = 4 - deg_v1 - deg_v2 + 3 * num_triangles
     return frc
 
-def lift_graph_to_simplicial_complex(pyg_data, max_dim=2):
+def lift_graph_to_simplicial_complex(pyg_data, max_cycle_length=6):
     """
-    Lifts a PyTorch Geometric Data object (graph) to a TopoNetX SimplicialComplex.
-    Also computes Forman-Ricci Curvature for all 1-simplices (edges) and adds it as a feature.
+    Lifts a PyTorch Geometric Data object (graph) to a TopoNetX CellComplex.
+    Also computes Forman-Ricci Curvature for all 1-cells (edges) and adds it as a feature.
     """
     # Convert PyG Data to NetworkX Graph
     G = to_networkx(pyg_data, to_undirected=True)
     
-    # Initialize a Simplicial Complex
-    # We build a clique complex up to dimension 2 (triangles) or 3 (tetrahedrons)
-    SC = tnx.SimplicialComplex()
+    # Initialize a Cell Complex
+    # We build a 2D CW complex where 2-cells are bounded chordless cycles
+    CC = tnx.CellComplex(G)
     
-    # Add 0-simplices (nodes)
+    # Add 0-cells (nodes)
     for node in G.nodes():
         # Keep node features if they exist
         features = {}
         if hasattr(pyg_data, 'x') and pyg_data.x is not None:
             features['x'] = pyg_data.x[node].numpy()
-        SC.add_node(node, **features)
+        CC.set_cell_attributes({node: features}, name='features', rank=0)
         
-    # Add 1-simplices (edges) and compute FRC
+    # Add 1-cells (edges) and compute FRC
     for edge in G.edges():
         frc = compute_forman_ricci_curvature(G, edge)
-        SC.add_simplex(edge, frc=frc)
+        CC.set_cell_attributes({tuple(edge): frc}, name='frc', rank=1)
         
-    # Add higher order simplices (2-simplices and 3-simplices)
-    if max_dim >= 2:
-        triangles = set()
-        neighbors = {n: set(G.neighbors(n)) for n in G.nodes()}
-        for u, v in G.edges():
-            common = neighbors[u].intersection(neighbors[v])
-            for w in common:
-                triangles.add(tuple(sorted((u, v, w))))
+    # Add 2-cells (chordless cycles up to max_cycle_length)
+    if max_cycle_length is not None and max_cycle_length > 2:
+        # Find chordless cycles
+        cycles = list(nx.chordless_cycles(G, length_bound=max_cycle_length))
         
-        # Limit to max 5000 triangles to prevent memory blowup in dense graphs
-        triangles_list = list(triangles)[:5000]
-        for tri in triangles_list:
-            SC.add_simplex(tri)
-            
-        if max_dim >= 3:
-            tetrahedrons = set()
-            for tri in triangles_list:
-                u, v, w = tri
-                common = neighbors[u].intersection(neighbors[v]).intersection(neighbors[w])
-                for z in common:
-                    tetrahedrons.add(tuple(sorted((u, v, w, z))))
-            for t in list(tetrahedrons)[:1000]:
-                SC.add_simplex(t)
+        # Limit to max 5000 cycles to prevent memory blowup in dense graphs
+        for cycle in cycles[:5000]:
+            if len(cycle) > 2:
+                CC.add_cell(cycle, rank=2)
                 
-    return SC, G
+    return CC, G
 
 if __name__ == "__main__":
     from torch_geometric.datasets import TUDataset
@@ -99,4 +85,4 @@ if __name__ == "__main__":
     if sc.dim >= 1:
         print("Sample Edge Curvatures:")
         for i, edge in enumerate(list(sc.skeleton(1))[:5]):
-            print(f"  Edge {edge}: FRC = {sc.get_simplex_attributes('frc')[tuple(edge)]}")
+            print(f"  Edge {edge}: FRC = {sc.get_cell_attributes('frc', rank=1)[tuple(edge)]}")
