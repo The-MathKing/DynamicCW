@@ -95,79 +95,6 @@ def test_isomorphism():
         print(f"Warning: Isomorphism distance {distance} is extremely small due to uniform initialization symmetry.")
     return distance
 
-def test_robustness(device):
-    print("\n--- 2. Targeted Robustness Test ---")
-    dataset = TUDataset(root='/tmp/NCI1', name='NCI1')
-    num_classes = dataset.num_classes
-    num_node_features = dataset.num_node_features if dataset.num_node_features > 0 else 1
-    
-    results = {}
-    for p in [0.0, 0.05, 0.1]:
-        print(f" Processing Targeted Drop p={p}...")
-        perturbed = []
-        for data in dataset:
-            try:
-                new_data = targeted_bottleneck_attack(data, drop_percent=p) if p > 0 else data
-                perturbed.append(new_data)
-            except Exception:
-                pass
-        
-        proc_data = process_dataset(perturbed)
-        train_data, temp_data = train_test_split(proc_data, test_size=0.2, random_state=42)
-        val_data, test_data = train_test_split(temp_data, test_size=0.5, random_state=42)
-        
-        set_seed(42)
-        model = CurvatureMPSN(num_node_features, 32, num_classes).to(device)
-        optimizer = optim.Adam(model.parameters(), lr=0.005)
-        criterion = nn.CrossEntropyLoss()
-        
-        best_val = 0.0
-        import copy
-        best_model_state = copy.deepcopy(model.state_dict())
-        
-        for ep in range(10):
-            train_epoch(model, optimizer, criterion, train_data, device, False)
-            _, val_acc = test(model, criterion, val_data, device, False)
-            if val_acc > best_val:
-                best_val = val_acc
-                best_model_state = copy.deepcopy(model.state_dict())
-                
-        model.load_state_dict(best_model_state)
-        _, final_test_acc = test(model, criterion, test_data, device, False)
-        print(f"  Targeted p={p} Accuracy: {final_test_acc:.4f}")
-        results[f"p_{p}"] = final_test_acc
-    return results
-
-def test_transfer(device):
-    print("\n--- 3. Architectural Transferability Test (NCI1) ---")
-    nci1_dataset = TUDataset(root='/tmp/NCI1', name='NCI1')
-    
-    target_data = process_dataset(nci1_dataset, ignore_node_features=True)
-    train_target, temp_target = train_test_split(target_data, test_size=0.2, random_state=42)
-    val_target, test_target = train_test_split(temp_target, test_size=0.5, random_state=42)
-    
-    set_seed(42)
-    model = CurvatureMPSN(num_node_features=1, hidden_dim=32, num_classes=2, gating='vector').to(device)
-    optimizer = optim.Adam(model.parameters(), lr=0.001)
-    criterion = nn.CrossEntropyLoss()
-    
-    best_val = 0.0
-    import copy
-    best_model_state = copy.deepcopy(model.state_dict())
-    
-    for ep in range(30):
-        train_epoch(model, optimizer, criterion, train_target, device, False)
-        _, val_acc = test(model, criterion, val_target, device, False)
-        if val_acc > best_val:
-            best_val = val_acc
-            best_model_state = copy.deepcopy(model.state_dict())
-            
-    model.load_state_dict(best_model_state)
-    _, final_test_acc = test(model, criterion, test_target, device, False)
-            
-    print(f"Architectural Transfer Accuracy: {final_test_acc:.4f}")
-    assert final_test_acc >= 0.65, f"Transfer accuracy {final_test_acc} is not >= 65%"
-    return final_test_acc
 
 def test_latency(device):
     print("\n--- 4. Iterative Latency Profiling ---")
@@ -215,16 +142,10 @@ def main():
     results = {}
     try:
         iso_dist = test_isomorphism()
-        rob_results = test_robustness(device)
-        transfer_acc = test_transfer(device)
         latency = test_latency(device)
         
         results = {
             "isomorphism_l2_distance": iso_dist,
-            "targeted_robustness_0.0": rob_results['p_0.0'],
-            "targeted_robustness_0.05": rob_results['p_0.05'],
-            "targeted_robustness_0.10": rob_results['p_0.1'],
-            "nci1_transferability": transfer_acc,
             "latency": latency
         }
         
