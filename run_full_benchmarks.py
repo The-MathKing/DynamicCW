@@ -30,28 +30,34 @@ def set_seed(seed):
     if torch.cuda.is_available():
         torch.cuda.manual_seed_all(seed)
 
-def run_n_trials(model_fn, train_data, test_data, device, is_gcn, n_trials=10, epochs=15):
+def run_n_trials(model_fn, train_data, val_data, test_data, device, is_gcn, n_trials=10, epochs=15):
     accs = []
+    import copy
     for i in range(n_trials):
         set_seed(i)
         model = model_fn().to(device)
         optimizer = optim.Adam(model.parameters(), lr=0.005)
         criterion = nn.CrossEntropyLoss()
         
-        trial_best = 0.0
+        best_val = 0.0
+        best_model_state = copy.deepcopy(model.state_dict())
         for ep in range(epochs):
             train_epoch(model, optimizer, criterion, train_data, device, is_gcn)
-            _, test_acc = test(model, criterion, test_data, device, is_gcn)
-            if test_acc > trial_best:
-                trial_best = test_acc
-        accs.append(trial_best)
+            _, val_acc = test(model, criterion, val_data, device, is_gcn)
+            if val_acc > best_val:
+                best_val = val_acc
+                best_model_state = copy.deepcopy(model.state_dict())
+                
+        model.load_state_dict(best_model_state)
+        _, final_test_acc = test(model, criterion, test_data, device, is_gcn)
+        accs.append(final_test_acc)
     return accs
 
-def compare_models(gcn_fn, mpsn_fn, train_data, test_data, device, n_trials=10, epochs=15):
+def compare_models(gcn_fn, mpsn_fn, train_data, val_data, test_data, device, n_trials=10, epochs=15):
     print("  Running GCN trials...")
-    gcn_accs = run_n_trials(gcn_fn, train_data, test_data, device, True, n_trials, epochs)
+    gcn_accs = run_n_trials(gcn_fn, train_data, val_data, test_data, device, True, n_trials, epochs)
     print("  Running MPSN trials...")
-    mpsn_accs = run_n_trials(mpsn_fn, train_data, test_data, device, False, n_trials, epochs)
+    mpsn_accs = run_n_trials(mpsn_fn, train_data, val_data, test_data, device, False, n_trials, epochs)
     
     gcn_mean, gcn_std = np.mean(gcn_accs), np.std(gcn_accs)
     mpsn_mean, mpsn_std = np.mean(mpsn_accs), np.std(mpsn_accs)
@@ -80,19 +86,20 @@ def main():
     # 1. Manifold Diversity
     print("\n--- 1. Manifold Diversity ---")
     final_results['diversity'] = {}
-    for ds_name in ['REDDIT-BINARY', 'COLLAB']:
+    for ds_name in ['NCI1', 'PROTEINS']:
         print(f"Processing {ds_name}...")
         dataset = TUDataset(root=f'/tmp/{ds_name}', name=ds_name)
         num_classes = dataset.num_classes
         num_node_features = dataset.num_node_features if dataset.num_node_features > 0 else 1
         
         proc_data = process_dataset(dataset)
-        train_data, test_data = train_test_split(proc_data, test_size=0.2, random_state=42)
+        train_data, temp_data = train_test_split(proc_data, test_size=0.2, random_state=42)
+        val_data, test_data = train_test_split(temp_data, test_size=0.5, random_state=42)
         
         gcn_fn = lambda: BaselineGCN(num_node_features, 32, num_classes)
         mpsn_fn = lambda: CurvatureMPSN(num_node_features, 32, num_classes)
         
-        metrics = compare_models(gcn_fn, mpsn_fn, train_data, test_data, device, n_trials=10, epochs=10)
+        metrics = compare_models(gcn_fn, mpsn_fn, train_data, val_data, test_data, device, n_trials=10, epochs=10)
         final_results['diversity'][ds_name] = metrics
         print(f"  {ds_name}: GCN={metrics['gcn_mean']:.4f}, MPSN={metrics['mpsn_mean']:.4f}, p={metrics['p_value']:.4e}")
 
@@ -116,12 +123,13 @@ def main():
                 pass
         
         proc_data = process_dataset(perturbed)
-        train_data, test_data = train_test_split(proc_data, test_size=0.2, random_state=42)
+        train_data, temp_data = train_test_split(proc_data, test_size=0.2, random_state=42)
+        val_data, test_data = train_test_split(temp_data, test_size=0.5, random_state=42)
         
         gcn_fn = lambda: BaselineGCN(num_node_features, 32, num_classes)
         mpsn_fn = lambda: CurvatureMPSN(num_node_features, 32, num_classes)
         
-        metrics = compare_models(gcn_fn, mpsn_fn, train_data, test_data, device, n_trials=10, epochs=10)
+        metrics = compare_models(gcn_fn, mpsn_fn, train_data, val_data, test_data, device, n_trials=10, epochs=10)
         final_results['robustness'][f'p_{p}'] = metrics
         print(f"  p={p}: GCN={metrics['gcn_mean']:.4f}, MPSN={metrics['mpsn_mean']:.4f}, p={metrics['p_value']:.4e}")
         
@@ -137,12 +145,13 @@ def main():
                 pass
         
         proc_data = process_dataset(perturbed)
-        train_data, test_data = train_test_split(proc_data, test_size=0.2, random_state=42)
+        train_data, temp_data = train_test_split(proc_data, test_size=0.2, random_state=42)
+        val_data, test_data = train_test_split(temp_data, test_size=0.5, random_state=42)
         
         gcn_fn = lambda: BaselineGCN(num_node_features, 32, num_classes)
         mpsn_fn = lambda: CurvatureMPSN(num_node_features, 32, num_classes)
         
-        metrics = compare_models(gcn_fn, mpsn_fn, train_data, test_data, device, n_trials=10, epochs=10)
+        metrics = compare_models(gcn_fn, mpsn_fn, train_data, val_data, test_data, device, n_trials=10, epochs=10)
         final_results['robustness'][f'targeted_p_{p}'] = metrics
         print(f"  Targeted p={p}: GCN={metrics['gcn_mean']:.4f}, MPSN={metrics['mpsn_mean']:.4f}, p={metrics['p_value']:.4e}")
         
@@ -175,15 +184,17 @@ def main():
 
     data_2 = process_ablation(2)
     data_3 = process_ablation(3)
-    train_2, test_2 = train_test_split(data_2, test_size=0.2, random_state=42)
-    train_3, test_3 = train_test_split(data_3, test_size=0.2, random_state=42)
+    train_2, temp_2 = train_test_split(data_2, test_size=0.2, random_state=42)
+    val_2, test_2 = train_test_split(temp_2, test_size=0.5, random_state=42)
+    train_3, temp_3 = train_test_split(data_3, test_size=0.2, random_state=42)
+    val_3, test_3 = train_test_split(temp_3, test_size=0.5, random_state=42)
     
-    for max_dim, (train_data, test_data) in zip([2, 3], [(train_2, test_2), (train_3, test_3)]):
+    for max_dim, (train_data, val_data, test_data) in zip([2, 3], [(train_2, val_2, test_2), (train_3, val_3, test_3)]):
         final_results['ablation'][f'dim_{max_dim}'] = {}
         for gating in ['none', 'scalar', 'vector', 'curvature']:
             print(f" Processing Dim={max_dim}, Gating={gating}...")
             mpsn_fn = lambda: CurvatureMPSN(num_node_features, 32, num_classes, gating=gating)
-            accs = run_n_trials(mpsn_fn, train_data, test_data, device, False, n_trials=10, epochs=10)
+            accs = run_n_trials(mpsn_fn, train_data, val_data, test_data, device, False, n_trials=10, epochs=10)
             mean, std = np.mean(accs), np.std(accs)
             final_results['ablation'][f'dim_{max_dim}'][gating] = {'mean': mean, 'std': std}
             print(f"  Acc={mean:.4f} ± {std:.4f}")
@@ -230,14 +241,14 @@ def main():
         print("Processing NCI1 (Target)...")
         target_data = process_dataset(nci1_dataset, ignore_node_features=True)
         
-        train_source, _ = train_test_split(source_data, test_size=0.2, random_state=42)
+        train_source, val_source = train_test_split(source_data, test_size=0.2, random_state=42)
         test_target = target_data
         
         gcn_fn = lambda: BaselineGCN(num_node_features, 32, num_classes)
         mpsn_fn = lambda: CurvatureMPSN(num_node_features, 32, num_classes)
         
         print("  Evaluating Zero-Shot Transfer...")
-        metrics = compare_models(gcn_fn, mpsn_fn, train_source, test_target, device, n_trials=10, epochs=10)
+        metrics = compare_models(gcn_fn, mpsn_fn, train_source, val_source, test_target, device, n_trials=10, epochs=10)
         final_results['transferability']['PROTEINS_to_NCI1'] = metrics
         print(f"  Zero-Shot Transfer: GCN={metrics['gcn_mean']:.4f}, MPSN={metrics['mpsn_mean']:.4f}, p={metrics['p_value']:.4e}")
     except Exception as e:

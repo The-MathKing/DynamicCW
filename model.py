@@ -132,6 +132,8 @@ class CurvatureWeightedSimplicialConv(nn.Module):
             gate = torch.sigmoid(self.scalar_gate(torch.cat([x_1, frc_norm], dim=-1)))
         elif self.gating == 'vector':
             gate = torch.sigmoid(self.vector_gate(torch.cat([x_1, frc_norm], dim=-1)))
+        else:
+            gate = 1.0
             
         out_edge = out_edge * gate
         x_1_new = F.gelu(out_edge)
@@ -193,17 +195,17 @@ class CurvatureMPSN(nn.Module):
         x_0, x_1, x_2 = self.conv1(x_0, x_1, x_2, incidence_1, incidence_2, frc_weights)
         x_0, x_1, x_2 = self.conv2(x_0, x_1, x_2, incidence_1, incidence_2, frc_weights)
         
-        from torch_geometric.nn import global_mean_pool
-        def safe_mean(x, batch):
+        from torch_geometric.nn import global_add_pool
+        def safe_add(x, batch):
             if x.shape[0] == 0:
                 return torch.zeros((1, x.shape[1]), device=x.device)
             if batch is not None:
-                return global_mean_pool(x, batch)
-            return torch.mean(x, dim=0, keepdim=True)
+                return global_add_pool(x, batch)
+            return torch.sum(x, dim=0, keepdim=True)
         
-        pooled_0 = safe_mean(x_0, batch_0)
-        pooled_1 = safe_mean(x_1, batch_1)
-        pooled_2 = safe_mean(x_2, batch_2)
+        pooled_0 = safe_add(x_0, batch_0)
+        pooled_1 = safe_add(x_1, batch_1)
+        pooled_2 = safe_add(x_2, batch_2)
         
         graph_embedding = torch.cat([pooled_0, pooled_1, pooled_2], dim=1)
         return self.classifier(graph_embedding)

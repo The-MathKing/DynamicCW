@@ -164,10 +164,11 @@ if __name__ == "__main__":
         
     num_classes = dataset.num_classes
     
-    # For a fast comparison, we do a single 80/20 train/test split
-    train_data, test_data = train_test_split(processed_dataset, test_size=0.2, random_state=42)
+    # Rigorous 80/10/10 train/val/test split
+    train_data, temp_data = train_test_split(processed_dataset, test_size=0.2, random_state=42)
+    val_data, test_data = train_test_split(temp_data, test_size=0.5, random_state=42)
     
-    print(f"Training on {len(train_data)} graphs, Testing on {len(test_data)} graphs.")
+    print(f"Training on {len(train_data)} graphs, Validation on {len(val_data)} graphs, Testing on {len(test_data)} graphs.")
     
     def train_and_eval(model, is_gcn, name):
         print(f"\n--- Training {name} ---")
@@ -175,7 +176,9 @@ if __name__ == "__main__":
         criterion = nn.CrossEntropyLoss()
         
         epoch_runtimes = []
-        best_test_acc = 0.0
+        best_val_acc = 0.0
+        import copy
+        best_model_state = copy.deepcopy(model.state_dict())
         
         # 30 epochs for a fast benchmark
         for epoch in range(1, 31):
@@ -186,17 +189,20 @@ if __name__ == "__main__":
             epoch_time = end_time - start_time
             epoch_runtimes.append(epoch_time)
             
-            test_loss, test_acc = test(model, criterion, test_data, device, is_gcn)
+            val_loss, val_acc = test(model, criterion, val_data, device, is_gcn)
             
-            if test_acc > best_test_acc:
-                best_test_acc = test_acc
+            if val_acc > best_val_acc:
+                best_val_acc = val_acc
+                best_model_state = copy.deepcopy(model.state_dict())
                 
             if epoch % 5 == 0 or epoch == 1:
-                print(f"Epoch {epoch:03d} | Time: {epoch_time:.3f}s | Train Acc: {train_acc:.4f} | Test Acc: {test_acc:.4f}")
+                print(f"Epoch {epoch:03d} | Time: {epoch_time:.3f}s | Train Acc: {train_acc:.4f} | Val Acc: {val_acc:.4f}")
                 
-        print(f"-> {name} Best Test Accuracy: {best_test_acc*100:.2f}%")
+        model.load_state_dict(best_model_state)
+        test_loss, test_acc = test(model, criterion, test_data, device, is_gcn)
+        print(f"-> {name} Final Test Accuracy: {test_acc*100:.2f}%")
         print(f"-> {name} Avg Time/Epoch: {np.mean(epoch_runtimes):.3f}s")
-        return best_test_acc
+        return test_acc
         
     # Initialize and train GCN Baseline
     gcn_model = BaselineGCN(num_node_features=num_node_features, hidden_dim=32, num_classes=num_classes).to(device)
