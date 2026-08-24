@@ -115,25 +115,37 @@ def test_latency(device):
         x_2 = model.triangle_embedding(torch.ones((B2.shape[1], 1)))
     
     # Warmup
-    for _ in range(5):
-        _ = model.conv1(x_0, x_1, x_2, B1, B2, frc)
-    
-    t0 = time.time()
-    with torch.no_grad():
+    for _ in range(10):
         o0, o1, o2 = model.conv1(x_0, x_1, x_2, B1, B2, frc)
-    t1 = time.time()
-    
-    t2 = time.time()
-    with torch.no_grad():
         o0, o1, o2 = model.conv2(o0, o1, o2, B1, B2, frc)
-    t3 = time.time()
+        
+    l1_times = []
+    l2_times = []
     
-    l1_time = (t1 - t0)*1000
-    l2_time = (t3 - t2)*1000
-    print(f"Layer 1 Inference Time: {l1_time:.4f} ms")
-    print(f"Layer 2 Inference Time: {l2_time:.4f} ms")
+    for _ in range(100):
+        t0 = time.time()
+        with torch.no_grad():
+            o0, o1, o2 = model.conv1(x_0, x_1, x_2, B1, B2, frc)
+        t1 = time.time()
+        
+        t2 = time.time()
+        with torch.no_grad():
+            o0_out, o1_out, o2_out = model.conv2(o0, o1, o2, B1, B2, frc)
+        t3 = time.time()
+        
+        l1_times.append((t1 - t0)*1000)
+        l2_times.append((t3 - t2)*1000)
+        
+    l1_mean = np.mean(l1_times)
+    l1_std = np.std(l1_times)
     
-    return {"layer_1_ms": l1_time, "layer_2_ms": l2_time}
+    l2_mean = np.mean(l2_times)
+    l2_std = np.std(l2_times)
+    
+    print(f"Layer 1 Inference Time: {l1_mean:.4f} ± {l1_std:.4f} ms")
+    print(f"Layer 2 Inference Time: {l2_mean:.4f} ± {l2_std:.4f} ms")
+    
+    return {"layer_1_ms": l1_mean, "layer_1_std": l1_std, "layer_2_ms": l2_mean, "layer_2_std": l2_std}
 
 def main():
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
