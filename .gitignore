@@ -14,9 +14,7 @@ __pycache__/
 
 # Data/Temp
 /tmp/
-*.png
-*.pdf
-
-# Project specific
 data/
+*.pdf
 .vscode/
+.agents/
