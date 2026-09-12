@@ -120,7 +120,7 @@ def generate_dirichlet_plot():
 
     ax2.set_xlabel('Cellular Layer $\ell$')
     ax2.set_ylabel('Normalized 1-Dirichlet Energy $\mathcal{E}_1(H_E^{(\ell)})$')
-    ax2.set_title('1-Cell (Edge) Hodge Dirichlet Energy')
+    ax2.set_title('1-Cell (Edge) Dirichlet Energy')
     
     plt.tight_layout()
     plt.savefig('figures/fig3_dirichlet_energy.png', dpi=300)
