@@ -2,8 +2,11 @@
 Rigorous Dirichlet Energy and Over-Smoothing Analysis on Cell Complexes.
 Computes:
 1. Normalized 0-Dirichlet Energy: E_0(H_V) = Tr(H_V^T Delta_0 H_V) / ||H_V||_F^2
+   where Delta_0 = B1 B1^T (D - A), the signed graph Laplacian on vertices.
 2. Normalized 1-Dirichlet Energy: E_1(H_E) = Tr(H_E^T Delta_1 H_E) / ||H_E||_F^2
-where Delta_0 = B1 B1^T and Delta_1 = B1^T B1 + B2 B2^T.
+   where Delta_1 is the unsigned edge-variation Laplacian built from lower- and
+   upper-adjacency between edges (sharing a vertex / a 2-cell); orientation-free
+   by construction, unlike B1^T B1 + B2 B2^T which depends on edge orientation.
 Evaluates across depths L in [0..10] comparing:
 - DynamicCW with Residuals & LayerNorm
 - DynamicCW without Residuals (Unregularized)
@@ -38,13 +41,30 @@ def compute_normalized_dirichlet_energies(H_V, H_E, B1, B2):
     norm_V = torch.norm(H_V, p='fro')**2 + 1e-8
     E_0 = torch.trace(torch.matmul(torch.matmul(H_V.t(), Delta_0), H_V)) / norm_V
 
-    # Edge Dirichlet Energy
+    # Edge Dirichlet Energy: an orientation-free "edge variation" Laplacian built
+    # from UNSIGNED lower/upper edge-adjacency (edges sharing a vertex / a 2-cell).
+    # Unlike B1^T B1 + B2 B2^T (which involves the signed B1, B2 and is therefore
+    # sensitive to the arbitrary per-edge orientation choice -- conjugating by a
+    # sign-flip matrix changes the quadratic form), this adjacency is purely
+    # combinatorial: A_lower[e,e'] = 1 iff e, e' share exactly one vertex, and
+    # A_upper[e,e'] = (number of shared 2-cells), both built from |B1|, |B2|,
+    # exactly mirroring Delta_0 = B1 B1^T = D - A on the node side.
     if H_E is not None and H_E.shape[0] > 0 and B1_d.shape[1] > 0:
+        n_edges = B1_d.shape[1]
+        absB1 = torch.abs(B1_d)
+        lower_adj = torch.matmul(absB1.t(), absB1)
+        lower_adj = lower_adj - torch.diag(torch.diag(lower_adj))
+        D_lower = torch.diag(lower_adj.sum(dim=1))
+        Delta_1 = D_lower - lower_adj
+
         if B2 is not None and B2.shape[1] > 0:
             B2_d = B2.to_dense() if B2.is_sparse else B2
-            Delta_1 = torch.matmul(B1_d.t(), B1_d) + torch.matmul(B2_d, B2_d.t())
-        else:
-            Delta_1 = torch.matmul(B1_d.t(), B1_d)
+            absB2 = torch.abs(B2_d)
+            upper_adj = torch.matmul(absB2, absB2.t())
+            upper_adj = upper_adj - torch.diag(torch.diag(upper_adj))
+            D_upper = torch.diag(upper_adj.sum(dim=1))
+            Delta_1 = Delta_1 + (D_upper - upper_adj)
+
         norm_E = torch.norm(H_E, p='fro')**2 + 1e-8
         E_1 = torch.trace(torch.matmul(torch.matmul(H_E.t(), Delta_1), H_E)) / norm_E
     else:

@@ -21,6 +21,7 @@ from torch_geometric.nn import GINConv, global_add_pool
 from data_processing import lift_graph_to_cell_complex, compute_forman_ricci_curvature
 from model import DynamicCWNet
 from train import get_incidence_matrices
+from run_comprehensive_benchmarks import BaselineGIN, count_parameters
 
 def evaluate_srg_separation(seed=42):
     """
@@ -128,7 +129,7 @@ def run_cycle_counting_experiment(num_graphs=200, epochs=60, seed=42):
     # Lift dataset for different model variants
     variants = ['degree_only', 'af3', 'cycle_aware', 'none']
     results = {}
-    
+
     for v in variants:
         print(f"Training DynamicCW (curvature={v}) on cycle counting...")
         model = DynamicCWNet(
@@ -144,7 +145,7 @@ def run_cycle_counting_experiment(num_graphs=200, epochs=60, seed=42):
         )
         optimizer = optim.AdamW(model.parameters(), lr=0.0005, weight_decay=1e-4)
         criterion = nn.L1Loss()
-        
+
         # Pre-lift train and test
         def prepare_data(data_list):
             processed = []
@@ -156,10 +157,10 @@ def run_cycle_counting_experiment(num_graphs=200, epochs=60, seed=42):
                 frc = torch.tensor([frc_dict.get(e, 0.0) for e in edgelist], dtype=torch.float32).unsqueeze(1)
                 processed.append({'x': pyg.x, 'B1': B1, 'B2': B2, 'frc': frc, 'y': y})
             return processed
-            
+
         train_data = prepare_data(train_set)
         test_data = prepare_data(test_set)
-        
+
         for ep in range(epochs):
             model.train()
             for item in train_data:
@@ -168,20 +169,47 @@ def run_cycle_counting_experiment(num_graphs=200, epochs=60, seed=42):
                 loss = criterion(pred, item['y'].unsqueeze(0))
                 loss.backward()
                 optimizer.step()
-                
+
         model.eval()
         test_mae = []
         with torch.no_grad():
             for item in test_data:
                 pred = model(item['x'], None, None, item['B1'], item['B2'], item['frc'])
                 test_mae.append(criterion(pred, item['y'].unsqueeze(0)).item())
-                
+
         results[v] = {
             'mean_mae': float(np.mean(test_mae)),
             'std_mae': float(np.std(test_mae))
         }
         print(f"  Variant {v}: Test MAE = {results[v]['mean_mae']:.4f} +- {results[v]['std_mae']:.4f}")
-        
+
+    # 1-WL GIN baseline (parameter-matched, ~46k vs DynamicCW's ~46k), for an
+    # external reference point on whether cellular lifting helps at all here.
+    print("Training 1-WL GIN baseline on cycle counting...")
+    gin = BaselineGIN(num_features=8, hidden_dim=70, num_classes=4, num_layers=4, readout='sum')
+    gin_optimizer = optim.AdamW(gin.parameters(), lr=0.0005, weight_decay=1e-4)
+    criterion = nn.L1Loss()
+    for ep in range(epochs):
+        gin.train()
+        for pyg, G, y in train_set:
+            gin_optimizer.zero_grad()
+            pred = gin(pyg.x, pyg.edge_index)
+            loss = criterion(pred, y.unsqueeze(0))
+            loss.backward()
+            gin_optimizer.step()
+    gin.eval()
+    gin_test_mae = []
+    with torch.no_grad():
+        for pyg, G, y in test_set:
+            pred = gin(pyg.x, pyg.edge_index)
+            gin_test_mae.append(criterion(pred, y.unsqueeze(0)).item())
+    results['gin_baseline'] = {
+        'mean_mae': float(np.mean(gin_test_mae)),
+        'std_mae': float(np.std(gin_test_mae)),
+        'params': count_parameters(gin)
+    }
+    print(f"  1-WL GIN Baseline: Test MAE = {results['gin_baseline']['mean_mae']:.4f} +- {results['gin_baseline']['std_mae']:.4f}")
+
     return results
 
 def run_bottleneck_transfer_task(num_samples=100, epochs=30, seed=42):
