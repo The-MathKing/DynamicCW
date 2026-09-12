@@ -136,13 +136,23 @@ def main():
         mpsn_ratios.append(mpsn_ratio)
         
     gcn_mean = np.mean(gcn_ratios)
+    gcn_median = np.median(gcn_ratios)
     gcn_std = np.std(gcn_ratios)
     
     mpsn_mean = np.mean(mpsn_ratios)
+    mpsn_median = np.median(mpsn_ratios)
     mpsn_std = np.std(mpsn_ratios)
     
-    print(f"GCN Sensitivity Ratio (Topo/Control): {gcn_mean:.2f}x ± {gcn_std:.2f}")
-    print(f"MPSN Sensitivity Ratio (Topo/Control): {mpsn_mean:.2f}x ± {mpsn_std:.2f}")
+    print("\n" + "=" * 60)
+    print("H1 Topological Sensitivity Ablation Benchmark (N=100 NCI1 Molecules)")
+    print("=" * 60)
+    print(f"GCN (Baseline):")
+    print(f"  Median Sensitivity Ratio: {gcn_median:.2f}x")
+    print(f"  Mean Sensitivity Ratio:   {gcn_mean:.2f}x ± {gcn_std:.2f}")
+    print(f"\nDynamicCW (Cellular MP + Curvature Gating):")
+    print(f"  Median Sensitivity Ratio: {mpsn_median:.2f}x")
+    print(f"  Mean Sensitivity Ratio:   {mpsn_mean:.2f}x ± {mpsn_std:.2f}")
+    print("=" * 60)
 
 if __name__ == '__main__':
     main()

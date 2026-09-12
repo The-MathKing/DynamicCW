@@ -1,111 +1,148 @@
+"""
+Rigorous Dirichlet Energy and Over-Smoothing Analysis on Cell Complexes.
+Computes:
+1. Normalized 0-Dirichlet Energy: E_0(H_V) = Tr(H_V^T Delta_0 H_V) / ||H_V||_F^2
+2. Normalized 1-Dirichlet Energy: E_1(H_E) = Tr(H_E^T Delta_1 H_E) / ||H_E||_F^2
+where Delta_0 = B1 B1^T and Delta_1 = B1^T B1 + B2 B2^T.
+Evaluates across depths L in [0..10] comparing:
+- DynamicCW with Residuals & LayerNorm
+- DynamicCW without Residuals (Unregularized)
+- DynamicCW No-Gate baseline
+- Standard 1-WL GIN baseline
+"""
+import os
+import sys
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+import json
 import torch
 import torch.nn as nn
+import numpy as np
 from torch_geometric.datasets import TUDataset
-from data_processing import lift_graph_to_simplicial_complex
+
+from data_processing import lift_graph_to_cell_complex
 from train import get_incidence_matrices
-from model import CurvatureWeightedSimplicialConv
-from torch_geometric.utils import to_networkx
-import random
-import warnings
-warnings.filterwarnings('ignore')
+from model import DynamicCWNet
 
-class DeepCurvatureMPSN(nn.Module):
-    def __init__(self, num_node_features, hidden_dim, num_layers=10, gating='vector'):
-        super(DeepCurvatureMPSN, self).__init__()
-        self.node_embedding = nn.Linear(num_node_features, hidden_dim)
-        self.edge_embedding = nn.Linear(8, hidden_dim)
-        self.triangle_embedding = nn.Linear(1, hidden_dim)
-        
-        self.layers = nn.ModuleList([
-            CurvatureWeightedSimplicialConv(hidden_dim, hidden_dim, gating=gating)
-            for _ in range(num_layers)
-        ])
-        
-    def forward_with_energy(self, x_0, x_1, x_2, incidence_1, incidence_2, frc):
-        energies = []
-        
-        # Initial projection
-        h_0 = self.node_embedding(x_0)
-        h_1 = self.edge_embedding(x_1) if x_1 is not None and x_1.shape[0] > 0 else None
-        h_2 = self.triangle_embedding(x_2) if x_2 is not None and x_2.shape[0] > 0 else None
-        
-        def calc_dirichlet_energy(nodes, edge_index):
-            if edge_index is None or edge_index.shape[1] == 0:
-                return 0.0
-            src = nodes[edge_index[0]]
-            dst = nodes[edge_index[1]]
-            return torch.mean(torch.sum((src - dst)**2, dim=1)).item()
-            
-        edge_index = None
-        if incidence_1 is not None and incidence_1.shape[1] > 0:
-            B1_d = incidence_1.to_dense() if incidence_1.is_sparse else incidence_1
-            # Extract edge index from B1
-            edge_list = []
-            for j in range(B1_d.shape[1]):
-                nodes = torch.where(B1_d[:, j] != 0)[0]
-                if len(nodes) == 2:
-                    edge_list.append([nodes[0].item(), nodes[1].item()])
-                    edge_list.append([nodes[1].item(), nodes[0].item()])
-            if len(edge_list) > 0:
-                edge_index = torch.tensor(edge_list).t()
-                
-        energies.append(calc_dirichlet_energy(h_0, edge_index))
-        
-        for layer in self.layers:
-            h_0, h_1, h_2 = layer(h_0, h_1, h_2, incidence_1, incidence_2, frc)
-            energies.append(calc_dirichlet_energy(h_0, edge_index))
-            
-        return energies
+def compute_normalized_dirichlet_energies(H_V, H_E, B1, B2):
+    """
+    Computes normalized Dirichlet energies on 0-cells and 1-cells.
+    Uses the SIGNED boundary matrices: B1 B1^T = D - A is the graph Laplacian
+    (orientation-independent, since B1 B1^T is invariant to per-edge sign flips),
+    unlike |B1||B1|^T = D + A, the signless Laplacian, which is maximized rather
+    than minimized by smooth (near-constant) signals.
+    """
+    B1_d = B1.to_dense() if B1.is_sparse else B1
+    Delta_0 = torch.matmul(B1_d, B1_d.t())
 
-def test_dirichlet_energy():
-    dataset = TUDataset(root='/tmp/NCI1', name='NCI1')
-    torch.manual_seed(42)
-    random.seed(42)
-    
-    # Find a molecule with edges and faces to properly test
-    valid_data = None
-    for data in dataset:
-        sc, _ = lift_graph_to_simplicial_complex(data, max_dim=2)
-        if sc.dim >= 2 and sc.skeleton(1):
-            valid_data = data
-            break
-            
-    if valid_data is None:
-        valid_data = dataset[0]
-        sc, _ = lift_graph_to_simplicial_complex(valid_data, max_dim=2)
-        
-    B1, B2 = get_incidence_matrices(sc)
-    
-    if sc.dim >= 1:
-        frc_dict = sc.get_cell_attributes('frc', rank=1)
-        frc_list = [frc_dict[tuple(edge)] for edge in sc.skeleton(1)]
-        frc_weights = torch.tensor(frc_list, dtype=torch.float32).unsqueeze(1)
-        
-        B1_d = B1.to_dense() if B1.is_sparse else B1
-        B2_d = B2.to_dense() if B2.is_sparse else B2
-        L1 = torch.matmul(B1_d.t(), B1_d) + torch.matmul(B2_d, B2_d.t())
-        eigvals, eigvecs = torch.linalg.eigh(L1)
-        k = 8
-        if eigvecs.shape[1] >= k:
-            hlpe = eigvecs[:, :k]
+    # Node Dirichlet Energy
+    norm_V = torch.norm(H_V, p='fro')**2 + 1e-8
+    E_0 = torch.trace(torch.matmul(torch.matmul(H_V.t(), Delta_0), H_V)) / norm_V
+
+    # Edge Dirichlet Energy
+    if H_E is not None and H_E.shape[0] > 0 and B1_d.shape[1] > 0:
+        if B2 is not None and B2.shape[1] > 0:
+            B2_d = B2.to_dense() if B2.is_sparse else B2
+            Delta_1 = torch.matmul(B1_d.t(), B1_d) + torch.matmul(B2_d, B2_d.t())
         else:
-            hlpe = torch.nn.functional.pad(eigvecs, (0, k - eigvecs.shape[1]))
+            Delta_1 = torch.matmul(B1_d.t(), B1_d)
+        norm_E = torch.norm(H_E, p='fro')**2 + 1e-8
+        E_1 = torch.trace(torch.matmul(torch.matmul(H_E.t(), Delta_1), H_E)) / norm_E
     else:
-        frc_weights = torch.empty((0, 1))
-        hlpe = torch.empty((0, 8))
-        
-    x_0 = valid_data.x if valid_data.x is not None else torch.ones((valid_data.num_nodes, 1))
-    x_2 = torch.ones((B2.shape[1], 1)) if B2.shape[1] > 0 else torch.empty((0, 1))
+        E_1 = torch.tensor(0.0)
+
+    return E_0.item(), E_1.item()
+
+def run_dirichlet_analysis(num_layers=10, num_molecules=20, seed=42):
+    torch.manual_seed(seed)
+    np.random.seed(seed)
     
-    model = DeepCurvatureMPSN(num_node_features=x_0.shape[1], hidden_dim=32, num_layers=10)
-    model.eval()
+    print("Loading NCI1 dataset for Dirichlet Energy Analysis...")
+    dataset = TUDataset(root='/tmp/NCI1', name='NCI1')
     
-    with torch.no_grad():
-        energies = model.forward_with_energy(x_0, hlpe, x_2, B1, B2, frc_weights)
+    molecules = []
+    for data in dataset:
+        cc, G = lift_graph_to_cell_complex(data, max_cycle_length=6, curvature_type='af3')
+        if len(cc.skeleton(2)) > 0 and len(cc.skeleton(1)) > 5:
+            B1, B2 = get_incidence_matrices(cc)
+            edgelist = sorted([tuple(sorted(e)) for e in cc._G.edges])
+            frc_dict = cc.get_cell_attributes('curvature', rank=1)
+            frc = torch.tensor([frc_dict.get(e, 0.0) for e in edgelist], dtype=torch.float32).unsqueeze(1)
+            x_0 = data.x.float() if data.x is not None else torch.ones((data.num_nodes, 1))
+            molecules.append({'x_0': x_0, 'B1': B1, 'B2': B2, 'frc': frc})
+            if len(molecules) >= num_molecules:
+                break
+                
+    models = {
+        'DynamicCW (With Residuals & Norm)': {'use_residuals': True, 'use_norm': True, 'gating': 'vector'},
+        'DynamicCW (Unregularized, No Residuals)': {'use_residuals': False, 'use_norm': False, 'gating': 'vector'},
+        'DynamicCW (No Gate, With Residuals)': {'use_residuals': True, 'use_norm': True, 'gating': 'none'},
+    }
+    
+    results = {}
+    hidden_dim = 32
+    num_node_feats = molecules[0]['x_0'].shape[1]
+    
+    for name, cfg in models.items():
+        print(f"Tracking energy decay across {num_layers} layers for: {name}")
+        model = DynamicCWNet(
+            num_node_features=num_node_feats,
+            hidden_dim=hidden_dim,
+            num_classes=1,
+            num_layers=num_layers,
+            gating=cfg['gating'],
+            dynamic_faces=True,
+            use_residuals=cfg['use_residuals'],
+            use_norm=cfg['use_norm']
+        )
+        model.eval()
         
-    print("Dirichlet Energy Trajectory:")
-    for i, e in enumerate(energies):
-        print(f"T_{i} = {e:.4f}")
+        all_mol_e0 = []
+        all_mol_e1 = []
+        
+        for mol in molecules:
+            x_0 = mol['x_0']
+            B1 = mol['B1']
+            B2 = mol['B2']
+            frc = mol['frc']
+            
+            # Embed initial
+            h_0 = model.node_embedding(x_0)
+            h_1 = model.edge_embedding(torch.zeros((B1.shape[1], 8)))
+            h_2 = model.face_embedding(torch.ones((B2.shape[1], 1))) if B2.shape[1] > 0 else None
+            
+            e0_traj = []
+            e1_traj = []
+            
+            e0, e1 = compute_normalized_dirichlet_energies(h_0, h_1, B1, B2)
+            e0_traj.append(e0)
+            e1_traj.append(e1)
+            
+            for conv in model.convs:
+                h_0, h_1, h_2 = conv(h_0, h_1, h_2, B1, B2, frc)
+                e0, e1 = compute_normalized_dirichlet_energies(h_0, h_1, B1, B2)
+                e0_traj.append(e0)
+                e1_traj.append(e1)
+                
+            all_mol_e0.append(e0_traj)
+            all_mol_e1.append(e1_traj)
+            
+        mean_e0 = np.mean(all_mol_e0, axis=0).tolist()
+        std_e0 = np.std(all_mol_e0, axis=0).tolist()
+        mean_e1 = np.mean(all_mol_e1, axis=0).tolist()
+        std_e1 = np.std(all_mol_e1, axis=0).tolist()
+        
+        results[name] = {
+            'mean_node_energy': mean_e0,
+            'std_node_energy': std_e0,
+            'mean_edge_energy': mean_e1,
+            'std_edge_energy': std_e1
+        }
+        
+    os.makedirs('results', exist_ok=True)
+    with open('results/dirichlet_energy_results.json', 'w') as f:
+        json.dump(results, f, indent=2)
+    print("Dirichlet energy trajectory results saved to results/dirichlet_energy_results.json")
+    return results
 
 if __name__ == '__main__':
-    test_dirichlet_energy()
+    run_dirichlet_analysis(num_layers=10, num_molecules=20)

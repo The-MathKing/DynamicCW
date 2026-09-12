@@ -1,88 +1,158 @@
 """
-Data Preprocessing module used for testing.
-Handles the heavy lifting of mapping standard PyG geometric graphs into 
-higher-dimensional TopoNetX Simplicial Complexes (up to 3-cells) and 
-computing the discrete Forman-Ricci Curvature for the 1-cells.
+Data Preprocessing and Topological Lifting Module.
+Handles lifting discrete graphs into 2D regular cell complexes (chordless cycle lifting / clique lifting)
+and computing discrete Ricci curvature variants (AF3, Degree-Only, Cycle-Aware Forman, Shuffled, and Random).
+Designed for strict permutation equivariance and reproducible benchmarks.
 """
 import torch
+import numpy as np
 import networkx as nx
 import toponetx as tnx
 from torch_geometric.utils import to_networkx
 
 def compute_forman_ricci_curvature(G, edge):
     """
-    Computes a generalized discrete Forman-Ricci Curvature for an edge (1-simplex).
-    Formula: FRC(e) = 4 - deg(v1) - deg(v2) + 3 * #(Triangles containing e)
+    Computes standard Augmented Forman-Ricci Curvature (AF3) for an edge (1-cell).
+    Formula: AF_3(e) = 4 - deg(u) - deg(v) + 3 * #(triangular 2-cells containing e)
     """
-    v1, v2 = edge
-    deg_v1 = G.degree(v1)
-    deg_v2 = G.degree(v2)
-    
-    # Find number of triangles containing the edge
-    # A triangle containing (v1, v2) means there is a node w connected to both v1 and v2.
-    common_neighbors = list(nx.common_neighbors(G, v1, v2))
+    u, v = edge
+    deg_u = G.degree(u)
+    deg_v = G.degree(v)
+    common_neighbors = list(nx.common_neighbors(G, u, v))
     num_triangles = len(common_neighbors)
-    
-    frc = 4 - deg_v1 - deg_v2 + 3 * num_triangles
-    return frc
+    return 4.0 - deg_u - deg_v + 3.0 * num_triangles
 
-def lift_graph_to_simplicial_complex(pyg_data, max_cycle_length=6):
+def compute_degree_only_curvature(G, edge):
     """
-    Lifts a PyTorch Geometric Data object (graph) to a TopoNetX CellComplex.
-    Also computes Forman-Ricci Curvature for all 1-cells (edges) and adds it as a feature.
+    Computes degree-only curvature baseline.
+    Formula: kappa_deg(e) = 4 - deg(u) - deg(v)
+    Isolates whether the gate benefits from combinatorial topology (triangles/faces)
+    or solely from endpoint degree statistics.
     """
-    # Convert PyG Data to NetworkX Graph
-    G = to_networkx(pyg_data, to_undirected=True)
+    u, v = edge
+    return 4.0 - G.degree(u) - G.degree(v)
+
+def compute_cycle_aware_forman(G, edge, face_lengths_for_edge):
+    """
+    Computes exact Cycle-Aware Augmented Forman Curvature.
+    Formula: AF_cycle(e) = 4 - deg(u) - deg(v) + sum_{f in faces(e)} (6 - |f|)
+    Under regular cell complexes where 2-cells are chordless cycles of length |f|.
+    """
+    u, v = edge
+    deg_u = G.degree(u)
+    deg_v = G.degree(v)
+    face_contrib = sum(6.0 - length for length in face_lengths_for_edge)
+    return 4.0 - deg_u - deg_v + face_contrib
+
+def find_chordless_cycles_canonical(G, max_cycle_length=6):
+    """
+    Extracts chordless cycles in G up to length max_cycle_length in a canonical,
+    deterministic, and permutation-equivariant manner.
+    Cycles are canonically represented by their lexicographically minimum rotation.
+    """
+    if max_cycle_length <= 2:
+        return []
     
-    # Initialize a Cell Complex
-    # We build a 2D CW complex where 2-cells are bounded chordless cycles
+    # Extract chordless cycles
+    raw_cycles = list(nx.chordless_cycles(G, length_bound=max_cycle_length))
+    
+    canonical_cycles = []
+    seen = set()
+    for cycle in raw_cycles:
+        if len(cycle) < 3 or len(cycle) > max_cycle_length:
+            continue
+        # Canonical representation of undirected cycle:
+        # Find minimum element, rotate, and choose direction with smaller second element
+        min_idx = cycle.index(min(cycle))
+        rot1 = cycle[min_idx:] + cycle[:min_idx]
+        rot2 = [rot1[0]] + rot1[1:][::-1]
+        canon = tuple(rot1) if rot1 <= rot2 else tuple(rot2)
+        if canon not in seen:
+            seen.add(canon)
+            canonical_cycles.append(list(canon))
+            
+    # Sort deterministically by (length, canonical node tuple) for stable ordering
+    canonical_cycles.sort(key=lambda c: (len(c), c))
+    return canonical_cycles
+
+def lift_graph_to_cell_complex(pyg_data, max_cycle_length=6, curvature_type='af3', seed=None):
+    """
+    Lifts a PyTorch Geometric Data object into a 2D regular cell complex (TopoNetX CellComplex).
+    Computes incidence matrices and edge curvature features in an equivariant, reproducible manner.
+    
+    Parameters:
+      pyg_data: PyG Data object (with x, edge_index, y, etc.)
+      max_cycle_length: max length of chordless cycles to include as 2-cells (default 6)
+      curvature_type: 'af3', 'degree_only', 'cycle_aware', 'shuffled', 'random', or 'none'
+      seed: random seed for stochastic baselines
+    """
+    G_raw = to_networkx(pyg_data, to_undirected=True)
+    num_nodes = pyg_data.num_nodes if hasattr(pyg_data, 'num_nodes') and pyg_data.num_nodes is not None else len(G_raw.nodes)
+    G = nx.Graph()
+    G.add_nodes_from(range(num_nodes))
+    G.add_edges_from(G_raw.edges())
+                
     CC = tnx.CellComplex(G)
     
-    # Add 0-cells (nodes)
-    for node in G.nodes():
-        # Keep node features if they exist
+    # 0-cells (nodes)
+    for node in sorted(G.nodes()):
         features = {}
         if hasattr(pyg_data, 'x') and pyg_data.x is not None:
-            features['x'] = pyg_data.x[node].numpy()
+            features['x'] = pyg_data.x[node].cpu().numpy()
         CC.set_cell_attributes({node: features}, name='features', rank=0)
         
-    # Add 1-cells (edges) and compute FRC
+    # Extract canonical chordless cycles as 2-cells
+    canonical_cycles = find_chordless_cycles_canonical(G, max_cycle_length=max_cycle_length)
+    for cycle in canonical_cycles:
+        CC.add_cell(cycle, rank=2)
+        
+    # Pre-map edges to incident face lengths for cycle-aware curvature
+    edge_to_face_lengths = {}
     for edge in G.edges():
-        frc = compute_forman_ricci_curvature(G, edge)
-        CC.set_cell_attributes({tuple(edge): frc}, name='frc', rank=1)
+        u, v = sorted(edge)
+        edge_to_face_lengths[(u, v)] = []
         
-    # Add 2-cells (chordless cycles up to max_cycle_length)
-    if max_cycle_length is not None and max_cycle_length > 2:
-        # Find chordless cycles
-        cycles = list(nx.chordless_cycles(G, length_bound=max_cycle_length))
-        
-        # Limit to max 5000 cycles to prevent memory blowup in dense graphs
-        for cycle in cycles[:5000]:
-            if len(cycle) > 2:
-                CC.add_cell(cycle, rank=2)
+    for cycle in canonical_cycles:
+        k = len(cycle)
+        for i in range(k):
+            u, v = sorted((cycle[i], cycle[(i + 1) % k]))
+            if (u, v) in edge_to_face_lengths:
+                edge_to_face_lengths[(u, v)].append(k)
                 
+    # 1-cells (edges) curvature computation
+    curvatures = []
+    edges_ordered = sorted(G.edges(), key=lambda e: (min(e), max(e)))
+    for edge in edges_ordered:
+        u, v = sorted(edge)
+        if curvature_type == 'af3':
+            c_val = compute_forman_ricci_curvature(G, (u, v))
+        elif curvature_type == 'degree_only':
+            c_val = compute_degree_only_curvature(G, (u, v))
+        elif curvature_type == 'cycle_aware':
+            c_val = compute_cycle_aware_forman(G, (u, v), edge_to_face_lengths.get((u, v), []))
+        elif curvature_type == 'random':
+            rng = np.random.default_rng(seed)
+            c_val = float(rng.standard_normal())
+        elif curvature_type == 'none':
+            c_val = 0.0
+        else: # default to af3
+            c_val = compute_forman_ricci_curvature(G, (u, v))
+            
+        curvatures.append(c_val)
+        CC.set_cell_attributes({(u, v): c_val}, name='curvature', rank=1)
+        
+    if curvature_type == 'shuffled':
+        rng = np.random.default_rng(seed)
+        shuffled_curv = rng.permutation(curvatures)
+        for i, edge in enumerate(edges_ordered):
+            u, v = sorted(edge)
+            CC.set_cell_attributes({(u, v): float(shuffled_curv[i])}, name='curvature', rank=1)
+            
     return CC, G
 
-if __name__ == "__main__":
-    from torch_geometric.datasets import TUDataset
-    # Test with a simple dataset
-    print("Loading MUTAG dataset for testing...")
-    dataset = TUDataset(root='/tmp/MUTAG', name='MUTAG')
-    data = dataset[0]
-    
-    print(f"Graph Nodes: {data.num_nodes}, Edges: {data.num_edges}")
-    
-    sc, G = lift_graph_to_simplicial_complex(data)
-    
-    print(f"Simplicial Complex shape:")
-    print(f"  0-cells (nodes): {len(sc.skeleton(0))}")
-    if sc.dim >= 1:
-        print(f"  1-cells (edges): {len(sc.skeleton(1))}")
-    if sc.dim >= 2:
-        print(f"  2-cells (triangles): {len(sc.skeleton(2))}")
-    
-    # Check curvature of first few edges
-    if sc.dim >= 1:
-        print("Sample Edge Curvatures:")
-        for i, edge in enumerate(list(sc.skeleton(1))[:5]):
-            print(f"  Edge {edge}: FRC = {sc.get_cell_attributes('frc', rank=1)[tuple(edge)]}")
+def lift_graph_to_simplicial_complex(pyg_data, max_cycle_length=6, max_dim=None, **kwargs):
+    """
+    Backward-compatible wrapper for previous scripts.
+    """
+    curvature_type = kwargs.get('curvature_type', 'af3')
+    return lift_graph_to_cell_complex(pyg_data, max_cycle_length=max_cycle_length, curvature_type=curvature_type)
