@@ -1,3 +1,13 @@
+"""
+NOTE (legacy script, not used by the current paper): this script predates the
+"When Does Forman-Ricci Curvature Gating Help Cellular Message Passing?" paper
+and its SRG isomorphism test (test_isomorphism, below) uses a std=5 weight
+initialization and a Hodge-Laplacian spectral positional encoding (hlpe) on
+top of the "uniform features" input -- neither of which is disclosed or used
+in the paper. Do not use numbers from this file to reproduce the paper; use
+verify_srg_separation.py instead, which discloses its initialization scheme
+and uses no positional encoding.
+"""
 import warnings
 warnings.filterwarnings("ignore")
 import torch
