@@ -1,141 +1,87 @@
-# DynamicCW: A Bochner-Weitzenböck Framework for Topologically-Motivated Graph Representation Learning
+# DynamicCW: When Does Curvature Gating Help Cellular Message Passing, and When Can't It?
 
-Official PyTorch implementation for **DynamicCW**, a topologically-motivated graph representation learning architecture that lifts graphs into 2-dimensional regular CW complexes and dynamically couples 0-, 1-, and 2-cells through unoriented boundary incidence matrices ($|B_1|$, $|B_2|$) and combinatorial Forman-Ricci curvature gating.
+Official code and reproducibility suite for the theoretical analysis and empirical benchmarking of **Curvature-Gated Cellular Message Passing**.
 
 **Authors**: Aryan Padarthi, Raghav Srinivasan, Olivia Kim, Ethan Ye  
 *Allen High School, Allen, TX, USA*
 
 ---
 
-## Overview
+## Abstract & Research Questions
 
-Iterative neighborhood aggregation schemes on discrete 1D graphs are fundamentally bounded by the 1-dimensional Weisfeiler-Lehman (1-WL) isomorphism limit. Dyadic message passing cannot distinguish co-spectral strongly regular graphs, chemical rings, or dense cliques. Furthermore, negatively curved edges act as topological bottlenecks that cause severe over-squashing.
+Higher-order graph neural networks operating on 2-dimensional CW complexes lift graphs to vertices (0-cells), edges (1-cells), and rings (2-cells) to surpass the 1-dimensional Weisfeiler-Lehman (1-WL) limit. Simultaneously, discrete Forman-Ricci curvature has been widely proposed as a geometric inductive bias to mitigate over-squashing across topological bottlenecks.
 
-DynamicCW overcomes these limitations by:
-1. **Lifting graphs to 2-dimensional CW complexes**, elevating 2-cells (faces/cycles) into first-class learning entities with continuous embeddings.
-2. **Cross-dimensional message passing** via absolute boundary incidence operators $|B_1|$ and $|B_2|$, guaranteeing strict permutation equivariance.
-3. **Dynamic Forman-Ricci curvature gating**, parameterizing a closed-form geometric flow that modulates topological bottlenecks in $\mathcal{O}(|E|+|F|)$ time on bounded-genus complexes ($k_{\max} = \mathcal{O}(1)$).
-
----
-
-## Visual Architecture & Results
-
-<p align="center">
-  <img src="figures/fig4_simplicial_lifting.png" width="70%" alt="Cellular Lifting Framework" />
-  <br />
-  <em>Figure 1: Cross-dimensional cellular message passing across 0-cells (nodes), 1-cells (edges), and 2-cells (faces).</em>
-</p>
-
-<p align="center">
-  <img src="figures/fig1_curvature_heatmap.png" width="55%" alt="Curvature Heatmap" />
-  <br />
-  <em>Figure 2: Combinatorial Forman-Ricci curvature profile on an NCI1 molecular graph isolating structural bottlenecks.</em>
-</p>
-
-<p align="center">
-  <img src="figures/fig3_transfer_robustness.png" width="85%" alt="Transfer Robustness and H1 Sensitivity" />
-  <br />
-  <em>Figure 3: (A) Zero-shot cross-domain transfer (PROTEINS &rarr; NCI1); (B) $H_1$ Homology Ablation representation shift.</em>
-</p>
-
-<p align="center">
-  <img src="figures/fig_scaling_benchmark.png" width="60%" alt="Scaling Benchmark" />
-  <br />
-  <em>Figure 4: Empirical operator scaling on bounded complexes ($k_{\max} \le 6$) vs. unconstrained scale-free networks.</em>
-</p>
+This repository provides the formal derivations, unit tests, synthetic experiments, and standard benchmarks investigating:
+1. **The Expressivity Ceiling Theorem:** Proving that combinatorial Augmented Forman-Ricci Curvature ($\mathrm{AF}_3$) on a 2-cell complex is completely determined by local 1-step cellular Weisfeiler-Lehman (1-CWL) colorings, adding zero strictly new distinguishing expressivity beyond standard Cellular Message Passing on the same complex.
+2. **Symmetry & Homology Limits:** Proving that on co-spectral strongly regular graphs (SRG-16-6-2-2), $\mathrm{AF}_3 \equiv -2$ is uniformly invariant, and local cellular message passing cannot detect non-local 1-homology without chordless cycle lifting.
+3. **Disentangling Curvature Inductive Biases:** Parameter-matched 10-seed ablation grid comparing $\mathrm{AF}_3$ against degree-only ($\kappa_{\text{deg}} = 4 - d_u - d_v$), cycle-aware Forman, shuffled $\kappa$, un-gated, dynamic vs static faces, and sum vs mean readouts.
+4. **Dirichlet Energy & Over-Smoothing:** Measuring normalized Hodge 0- and 1-Dirichlet energy across cellular layers to analyze the role of residuals and normalization in preventing collapse.
 
 ---
 
-## Repository Structure
+## Directory Structure
 
 ```
-DynamicCW/
-├── figures/                     # High-resolution generated PNG figures
-│   ├── fig1_curvature_heatmap.png
-│   ├── fig3_transfer_robustness.png
-│   ├── fig4_simplicial_lifting.png
-│   ├── fig_scaling_benchmark.png
-│   ├── bottleneck_oversquashing.png
-│   └── cellular_lifting.png
-├── model.py                     # CellularMessagePassingLayer & CurvatureMPSN architectures
-├── model_baselines.py           # Standard GCN & Static CW network baselines
-├── data_processing.py           # Chordless cycle extraction & boundary matrix construction
-├── train.py                     # Model training routines, optimizers, and loss definitions
-├── verify_srg_separation.py     # SRG(16,6,2,2) Betti separation verification (Theorem 2)
-├── run_zinc_benchmark.py        # ZINC molecular regression & kappa=0 ablation benchmark
-├── run_betti_ablation_v2.py     # H1 homology sensitivity ablation test protocol
-├── run_dirichlet_energy.py      # Multi-layer Dirichlet energy decay tracker
-├── run_scaling_benchmark.py     # Computational scaling & latency profiler
-├── run_all_benchmarks_v2.py     # Zero-shot cross-domain evaluation (PROTEINS -> NCI1)
-├── visualize_curvature.py       # Combinatorial Forman-Ricci heatmap generator
-├── adversarial_utils.py         # Structural perturbation utilities
-├── requirements.txt             # Python dependencies
-└── README.md
+code/
+├── data_processing.py              # Canonical, permutation-equivariant chordless cycle lifting & curvature variants
+├── model.py                        # CurvatureWeightedCellularConv & DynamicCWNet with LayerNorm and residuals
+├── train.py                        # Training loops, TopoNetX incidence matrices, and data processing
+├── experiments_synthetic.py        # SRG expressivity, cycle counting regression, & bottleneck transfer
+├── run_comprehensive_benchmarks.py # Multi-seed ablation grid (10 seeds, paired t-tests, parameter matching)
+├── run_dirichlet_energy.py         # Hodge 0- and 1-Dirichlet energy tracking across cellular depths
+├── generate_paper_figures.py       # Script generating publication vector figures with error bars from JSON logs
+├── tests/
+│   └── test_invariants.py          # Unit tests for Betti numbers, permutation equivariance, & orientation invariance
+└── requirements.txt                # Python dependencies
 ```
 
 ---
 
-## Installation
-
-We recommend Python 3.10+ in a clean virtual environment:
+## Installation & Requirements
 
 ```bash
 python3 -m venv .venv
 source .venv/bin/activate
-pip install --upgrade pip
-pip install -r requirements.txt
+pip install -r code/requirements.txt
 ```
 
 ---
 
-## Reproducing Paper Results & Theorems
+## Running Unit Tests & Invariant Verification
 
-### 1. SRG(16, 6, 2, 2) Betti-Number Separation (Theorem 2 & Proposition 1)
-Evaluates the 1-WL-indistinguishable 4&times;4 Rook's graph vs. Shrikhande graph clique complexes:
+Run the automated test suite verifying exact SRG Betti numbers, permutation equivariance under node permutations, and orientation invariance:
 ```bash
-python verify_srg_separation.py
-```
-*Expected output: Rook's $(b_0, b_1, b_2) = (1, 9, 8)$ vs. Shrikhande $(1, 2, 1)$, separated with $D \ge |E| = 48$.*
-
-### 2. ZINC Regression & $\kappa=0$ Curvature Ablation (Section 5.3)
-Runs the resource-matched 5-seed benchmark comparing Standard GCN, Static CW, DynamicCW ($\kappa=0$), and full DynamicCW:
-```bash
-python run_zinc_benchmark.py
-```
-
-### 3. $H_1$ Homology Sensitivity Ablation (Section 5.4)
-Quantifies representation shifts under terminal edge deletion ($\Delta b_1 = 0$) versus cycle-destroying deletion ($\Delta b_1 = -1$):
-```bash
-python run_betti_ablation_v2.py
-```
-*Expected output: Standard GCN median $0.42\times$ vs. DynamicCW median $17.33\times$.*
-
-### 4. Dirichlet Energy Collapse Tracking (Section 5.2)
-Measures metric homogenization across $T=10$ propagation layers:
-```bash
-python run_dirichlet_energy.py
-```
-
-### 5. Empirical Latency & Scaling Profiling (Section 3.3 / 4.2)
-Benchmarks boundary multiplication scaling on bounded ($k_{\max} \le 6$) vs. scale-free topologies:
-```bash
-python run_scaling_benchmark.py
-```
-
-### 6. Curvature Visualization
-Generates the discrete Forman-Ricci curvature heatmap on molecular graphs:
-```bash
-python visualize_curvature.py
-```
-
-### 7. Zero-Shot Cross-Domain Generalization (Section 5.5)
-Trains on `PROTEINS` and evaluates zero-shot transfer on `NCI1`:
-```bash
-python run_all_benchmarks_v2.py
+python code/tests/test_invariants.py
 ```
 
 ---
 
-## License
+## Running Controlled Synthetic & Expressivity Experiments
 
-This project is licensed under the MIT License.
+```bash
+python code/experiments_synthetic.py
+```
+Outputs:
+- SRG-16-6-2-2 2-clique complex distance ($L_2 = 0$) vs Chordless cycle lifting distance ($L_2 > 0$).
+- Substructure cycle counting regression across curvature types.
+- Bottleneck over-squashing graph transfer accuracy.
+
+---
+
+## Running Comprehensive Multi-Seed Ablations
+
+```bash
+python code/run_comprehensive_benchmarks.py
+```
+Evaluates all models across 10 random seeds on ZINC-12k under matched parameter budgets (~100k params), computing mean, standard deviation, 95% confidence intervals, and paired two-tailed $t$-tests with $p$-values.
+
+---
+
+## Generating Figures & Visualizations
+
+```bash
+python code/generate_paper_figures.py
+```
+Generates vector graphics in `figures/` directly from JSON logs:
+- `figures/fig2_ablation_grid.pdf` / `.png`
+- `figures/fig3_dirichlet_energy.pdf` / `.png`
