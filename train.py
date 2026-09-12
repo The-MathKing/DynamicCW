@@ -21,22 +21,24 @@ from model_baselines import BaselineGCN
 
 def get_incidence_matrices(sc):
     """
-    Extracts the B1 (nodes to edges) and B2 (edges to triangles) 
-    incidence matrices from a TopoNetX SimplicialComplex as sparse PyTorch tensors.
+    Extracts the B1 (nodes to edges) and B2 (edges to 2-cells) 
+    incidence matrices from a TopoNetX CellComplex as sparse PyTorch tensors,
+    guaranteeing that edge columns of B1 and edge rows of B2 match sorted edgelist order.
     """
-    # toponetx incidence matrices are scipy sparse matrices
-    if sc.dim >= 1:
+    num_nodes = len(sc._G.nodes) if hasattr(sc, '_G') else len(sc.skeleton(0))
+    edgelist = sorted([tuple(sorted(e)) for e in sc._G.edges]) if hasattr(sc, '_G') else []
+    
+    if len(edgelist) > 0:
         B1_scipy = sc.incidence_matrix(rank=1, signed=True)
-        # Convert scipy sparse to pytorch sparse
         coo = B1_scipy.tocoo()
         indices = torch.tensor(np.vstack((coo.row, coo.col)), dtype=torch.long)
         values = torch.tensor(coo.data, dtype=torch.float32)
         shape = coo.shape
         B1 = torch.sparse_coo_tensor(indices, values, size=shape).coalesce()
     else:
-        B1 = torch.zeros((len(sc.skeleton(0)), 0))
+        B1 = torch.zeros((num_nodes, 0))
         
-    if sc.dim >= 2:
+    if sc.dim >= 2 and len(sc.skeleton(2)) > 0:
         B2_scipy = sc.incidence_matrix(rank=2, signed=True)
         coo = B2_scipy.tocoo()
         indices = torch.tensor(np.vstack((coo.row, coo.col)), dtype=torch.long)
@@ -44,24 +46,30 @@ def get_incidence_matrices(sc):
         shape = coo.shape
         B2 = torch.sparse_coo_tensor(indices, values, size=shape).coalesce()
     else:
-        B2 = torch.zeros((len(sc.skeleton(1)), 0))
+        B2 = torch.zeros((len(edgelist), 0))
         
     return B1, B2
 
 def _process_single_graph(args):
-    data, ignore_node_features = args
-    sc, _ = lift_graph_to_simplicial_complex(data)
+    data, ignore_node_features, curvature_type, max_cycle_length = args
+    sc, _ = lift_graph_to_simplicial_complex(
+        data, max_cycle_length=max_cycle_length, curvature_type=curvature_type
+    )
     
     B1, B2 = get_incidence_matrices(sc)
     
     if hasattr(data, 'x') and data.x is not None and not ignore_node_features:
         x_0 = data.x
     else:
-        x_0 = torch.ones((len(sc.skeleton(0)), 1))
+        num_nodes = len(sc._G.nodes) if hasattr(sc, '_G') else len(sc.skeleton(0))
+        x_0 = torch.ones((num_nodes, 1))
         
-    if sc.dim >= 1:
-        frc_dict = sc.get_cell_attributes('frc', rank=1)
-        frc_list = [frc_dict[tuple(edge)] for edge in sc.skeleton(1)]
+    edgelist = sorted([tuple(sorted(e)) for e in sc._G.edges]) if hasattr(sc, '_G') else []
+    if len(edgelist) > 0:
+        frc_dict = sc.get_cell_attributes('curvature', rank=1)
+        if not frc_dict:
+            frc_dict = sc.get_cell_attributes('frc', rank=1)
+        frc_list = [frc_dict.get(edge, 0.0) for edge in edgelist]
         frc_weights = torch.tensor(frc_list, dtype=torch.float32).unsqueeze(1)
         
         # Compute Hodge 1-Laplacian Positional Encodings
@@ -78,7 +86,6 @@ def _process_single_graph(args):
         frc_weights = torch.empty((0, 1))
         hlpe = torch.empty((0, 8))
         
-        
     return {
         'x_0': x_0,
         'edge_index': data.edge_index,
@@ -89,16 +96,16 @@ def _process_single_graph(args):
         'y': data.y
     }
 
-def process_dataset(dataset, ignore_node_features=False):
+def process_dataset(dataset, ignore_node_features=False, curvature_type='af3', max_cycle_length=6):
     """
     Preprocess all graphs in the dataset into their topological representations.
     """
     processed_data = []
-    print("Lifting graphs to Simplicial Complexes (Using 7 Cores)...")
+    print(f"Lifting graphs to Cell Complexes (type={curvature_type}, k_max={max_cycle_length})...")
     
-    args_list = [(data, ignore_node_features) for data in dataset]
+    args_list = [(data, ignore_node_features, curvature_type, max_cycle_length) for data in dataset]
     
-    pool = multiprocessing.Pool(processes=7)
+    pool = multiprocessing.Pool(processes=min(7, multiprocessing.cpu_count()))
     
     for i, result in enumerate(pool.imap(_process_single_graph, args_list)):
         processed_data.append(result)
