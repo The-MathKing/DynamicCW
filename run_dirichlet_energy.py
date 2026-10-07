@@ -96,6 +96,7 @@ def run_dirichlet_analysis(num_layers=10, num_molecules=20, seed=42):
         'DynamicCW (With Residuals & Norm)': {'use_residuals': True, 'use_norm': True, 'gating': 'vector'},
         'DynamicCW (Unregularized, No Residuals)': {'use_residuals': False, 'use_norm': False, 'gating': 'vector'},
         'DynamicCW (No Gate, With Residuals)': {'use_residuals': True, 'use_norm': True, 'gating': 'none'},
+        'DynamicCW (No Gate, No Residuals)': {'use_residuals': False, 'use_norm': False, 'gating': 'none'},
     }
     
     results = {}

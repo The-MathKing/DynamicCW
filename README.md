@@ -2,8 +2,10 @@
 
 Official code and reproducibility suite for the theoretical analysis and empirical benchmarking of **Curvature-Gated Cellular Message Passing**.
 
-**Authors**: Aryan Padarthi, Raghav Srinivasan, Olivia Kim, Ethan Ye  
+**Authors**: Aryan Padarthi, Raghav Srinivasan, Olivia Kim, Ethan Ye, Derek Lin  
 *Allen High School, Allen, TX, USA*
+
+Accepted at **COMPLEX NETWORKS 2026** (15th International Conference on Complex Networks and Their Applications, Granada, Spain); proceedings published by Springer in *Studies in Computational Intelligence*.
 
 ---
 
@@ -12,36 +14,53 @@ Official code and reproducibility suite for the theoretical analysis and empiric
 Higher-order graph neural networks operating on 2-dimensional CW complexes lift graphs to vertices (0-cells), edges (1-cells), and rings (2-cells) to surpass the 1-dimensional Weisfeiler-Lehman (1-WL) limit. Simultaneously, discrete Forman-Ricci curvature has been widely proposed as a geometric inductive bias to mitigate over-squashing across topological bottlenecks.
 
 This repository provides the formal derivations, unit tests, synthetic experiments, and standard benchmarks investigating:
-1. **The Expressivity Ceiling Theorem:** Proving that combinatorial Augmented Forman-Ricci Curvature ($\mathrm{AF}_3$) on a 2-cell complex is completely determined by local 1-step cellular Weisfeiler-Lehman (1-CWL) colorings, adding zero strictly new distinguishing expressivity beyond standard Cellular Message Passing on the same complex.
-2. **Symmetry & Homology Limits:** On the 3-WL-indistinguishable Rook's 4x4 / Shrikhande strongly regular graph pair (SRG-16-6-2-2), $\mathrm{AF}_3 \equiv -2$ is uniformly invariant on the 2-truncated clique complex (the full clique complex already separates them trivially via Rook's 4-cliques, per Bodnar et al. 2021); chordless cycle lifting separates them deterministically via differing face types (Shrikhande alone has pentagons).
-3. **Disentangling Curvature Inductive Biases:** Parameter-matched 20-seed ablation grid on a ZINC-12k subsample comparing $\mathrm{AF}_3$ against degree-only ($\kappa_{\text{deg}} = 4 - d_u - d_v$), cycle-aware Forman, shuffled $\kappa$, un-gated, dynamic vs static faces, and sum vs mean readouts, with TOST equivalence testing (not just non-significance) and Bonferroni correction.
-4. **Dirichlet Energy & Over-Smoothing:** Measuring normalized 0- and 1-Dirichlet energy (the latter via an orientation-free unsigned edge-variation Laplacian, not the signed Hodge Laplacian) across cellular layers to analyze the role of residuals and normalization in preventing collapse.
+1. **The Expressivity Ceiling Theorem:** Augmented Forman-Ricci Curvature ($\mathrm{AF}_3$) on a 2-cell complex is completely determined by 1-step cellular Weisfeiler-Lehman (1-CWL) colorings, so gating adds no graph-distinguishing expressivity to cellular message passing with injective (sum-type) aggregation on the same complex. With mean aggregation, a *raw* Forman gate can add information (Remark 1); per-graph standardization removes it again.
+2. **Symmetry & Homology Limits:** On the Rook's 4x4 / Shrikhande strongly regular graph pair (SRG-16-6-2-2), $\mathrm{AF}_3 \equiv -2$ on the 2-truncated clique complex (the full clique complex already separates them via Rook's 4-cliques, per Bodnar et al. 2021); chordless cycle lifting separates them deterministically via differing face sizes (Shrikhande alone has pentagons).
+3. **Disentangling Curvature Inductive Biases:** 20-seed ablation grid on a ZINC-12k subsample comparing $\mathrm{AF}_3$ against degree-only ($\kappa_{\text{deg}} = 4 - d_u - d_v$), cycle-aware Forman, shuffled $\kappa$, un-gated, dynamic vs static faces, sum vs mean readouts, and mean vs sum aggregation, with TOST equivalence testing and Bonferroni correction.
+4. **Dirichlet Energy & Over-Smoothing:** Normalized 0- and 1-Dirichlet energy (the latter via an orientation-free unsigned edge-variation Laplacian) across cellular layers, both at initialization and after training.
+
+---
+
+## Camera-Ready Experiments
+
+Added in response to the reviews; run with `python run_reviewer_experiments.py [zinc_mean] [dirichlet] [bottleneck]`. Results are in `results/reviewer_*.json`.
+
+| Experiment | Result |
+|---|---|
+| **Mean aggregation & raw curvature** (ZINC subsample, 20 seeds) | Mean aggregation is significantly worse than sum (0.584 vs 0.524 MAE). Neither the standardized (0.581) nor the raw $\mathrm{AF}_3$ gate (0.579) closes the gap; both are TOST-equivalent to the un-gated mean model. |
+| **Trained Dirichlet energy** (depth 6, 10 seeds) | Models without residuals/LayerNorm collapse at initialization but **not after training** (node energy 0.53–1.75), yet still perform far worse (0.708 / 0.785 vs ~0.51 MAE): the deficit is an optimization effect. |
+| **Bottleneck transfer** (100 seeds, + shuffled-$\kappa$ arm) | Converged seeds: $\mathrm{AF}_3$ 77, degree-only 77, un-gated 73, shuffled-$\kappa$ 82 (no significant differences). |
+
+`verify_mean_aggregation.py` reproduces the Remark 1 example ($C_8$ vs. the cube $Q_3$).
 
 ---
 
 ## Directory Structure
 
 ```
-code/
+DynamicCW/
 ├── data_processing.py              # Canonical, permutation-equivariant chordless cycle lifting & curvature variants
-├── model.py                        # CurvatureWeightedCellularConv & DynamicCWNet with LayerNorm and residuals
+├── model.py                        # DynamicCWNet: residuals, LayerNorm, sum/mean aggregation, raw/standardized curvature gate
 ├── train.py                        # Training loops, TopoNetX incidence matrices, and data processing
-├── verify_srg_separation.py        # Prop. 1: exact Betti/face-count verification + SRG separation test (disclosed init, no positional encoding)
+├── verify_srg_separation.py        # Prop. 1: exact Betti/face-count verification + SRG separation test
+├── verify_mean_aggregation.py      # Remark 1: mean aggregation + raw Forman gate escapes the 1-CWL ceiling; standardized gate does not
 ├── experiments_synthetic.py        # Cycle counting regression (incl. 1-WL GIN baseline) & bottleneck transfer
 ├── run_synthetic_multiseed.py      # Multi-seed (25) wrapper for the above, with TOST equivalence testing
 ├── run_comprehensive_benchmarks.py # Multi-seed ablation grid (20 seeds, paired t-tests + TOST, Bonferroni correction)
-├── run_dirichlet_energy.py         # 0- and 1-Dirichlet energy tracking across cellular depths
-├── generate_paper_figures.py       # Script generating publication vector figures with error bars from JSON logs
+├── run_reviewer_experiments.py     # Camera-ready experiments (see above)
+├── run_dirichlet_energy.py         # 0- and 1-Dirichlet energy tracking across cellular depths (at initialization)
+├── generate_paper_figures.py       # Publication figures from the JSON logs
+├── results/                        # JSON logs behind every number in the paper
 ├── tests/
 │   └── test_invariants.py          # Unit tests for Betti numbers, permutation equivariance, & orientation invariance
 └── requirements.txt                # Python dependencies
+```
 
 Note: run_all_benchmarks_v2.py, run_light_tests.py, run_multi_seed.py, run_betti_ablation.py,
 run_full_benchmarks.py, run_mutag_benchmark.py, run_scaling_benchmark.py, run_zinc_benchmark.py,
 model_baselines.py, adversarial_utils.py, check_datasets.py, and dry_run_test.py are exploratory
 scripts from an earlier phase of this project and are **not** used to produce any number reported
 in the current paper. See the warning docstring at the top of run_all_benchmarks_v2.py.
-```
 
 ---
 
@@ -50,16 +69,15 @@ in the current paper. See the warning docstring at the top of run_all_benchmarks
 ```bash
 python3 -m venv .venv
 source .venv/bin/activate
-pip install -r code/requirements.txt
+pip install -r requirements.txt
 ```
 
 ---
 
 ## Running Unit Tests & Invariant Verification
 
-Run the automated test suite verifying exact SRG Betti numbers, permutation equivariance under node permutations, and orientation invariance:
 ```bash
-python code/tests/test_invariants.py
+python tests/test_invariants.py
 ```
 
 ---
@@ -67,45 +85,43 @@ python code/tests/test_invariants.py
 ## Reproducing the SRG Separation Test (Proposition 1)
 
 ```bash
-python code/verify_srg_separation.py
+python verify_srg_separation.py
 ```
-Recomputes every topological quantity in Proposition 1 from scratch in under a minute:
-exact Betti vectors ((1,9,8) vs (1,2,1)), chordless face counts (164 vs 204), and the
-$L_2$ embedding distance under triangle lifting ($\approx 0$) vs chordless lifting ($>0$),
-using disclosed small-scale random initialization and no positional encoding.
+Recomputes every topological quantity in Proposition 1 in under a minute: Betti vectors
+((1,9,8) vs (1,2,1)), chordless face counts (164 vs 204), and the embedding distance under
+triangle lifting (~2e-13) vs chordless lifting (~1421), with random initialization and no
+positional encoding.
 
 ---
 
-## Running Controlled Synthetic & Expressivity Experiments
+## Running Controlled Synthetic Experiments
 
 ```bash
-python code/experiments_synthetic.py       # single-seed smoke test
-python code/run_synthetic_multiseed.py     # 25-seed version with TOST equivalence testing (paper numbers)
+python experiments_synthetic.py       # single-seed smoke test
+python run_synthetic_multiseed.py     # 25-seed version with TOST equivalence testing
 ```
-Outputs:
-- Substructure cycle counting regression, including a parameter-matched 1-WL GIN baseline.
-- Bottleneck over-squashing graph transfer convergence rate.
+Outputs substructure cycle counting regression (with a parameter-matched 1-WL GIN baseline) and
+bottleneck over-squashing convergence rates.
 
 ---
 
-## Running Comprehensive Multi-Seed Ablations
+## Running the ZINC Ablation Grid
 
 ```bash
-python code/run_comprehensive_benchmarks.py
+python run_comprehensive_benchmarks.py
 ```
-Evaluates all models across 20 random seeds on a 700-molecule ZINC-12k subsample under matched
-parameter budgets (~100k params), computing mean, standard deviation, paired two-tailed $t$-tests,
-TOST equivalence tests (margin 0.02 MAE), and a Bonferroni correction across comparisons. Set
-`DYNAMICCW_N_WORKERS` to control parallelism (default 4; uses `multiprocessing` with the `spawn`
-context, since `fork` deadlocks with pre-initialized PyTorch/BLAS thread pools on macOS).
+Evaluates all models across 20 random seeds on a 700-molecule ZINC-12k subsample (85k–194k
+parameters), computing mean, standard deviation, paired two-tailed $t$-tests, TOST equivalence
+tests (margin 0.02 MAE), and a Bonferroni correction. Set `DYNAMICCW_N_WORKERS` to control
+parallelism (uses `multiprocessing` with the `spawn` context, since `fork` deadlocks with
+pre-initialized PyTorch/BLAS thread pools on macOS).
 
 ---
 
-## Generating Figures & Visualizations
+## Generating Figures
 
 ```bash
-python code/generate_paper_figures.py
+python generate_paper_figures.py
 ```
-Generates vector graphics in `figures/` directly from JSON logs:
-- `figures/fig2_ablation_grid.pdf` / `.png`
-- `figures/fig3_dirichlet_energy.pdf` / `.png`
+Generates figures in `figures/` from the JSON logs, including
+`figures/fig1_dirichlet_init_vs_trained.png` (Dirichlet energy at initialization vs. after training).

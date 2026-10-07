@@ -212,7 +212,7 @@ def run_cycle_counting_experiment(num_graphs=200, epochs=60, seed=42):
 
     return results
 
-def run_bottleneck_transfer_task(num_samples=100, epochs=30, seed=42):
+def run_bottleneck_transfer_task(num_samples=100, epochs=30, seed=42, include_shuffled=False):
     """
     Over-squashing benchmark: Clique-Ring Graph Transfer (Di Giovanni et al.).
     A source clique of size K1 is connected via a bottleneck path of length P to a target clique of size K2.
@@ -268,6 +268,9 @@ def run_bottleneck_transfer_task(num_samples=100, epochs=30, seed=42):
         'DynamicCW (No Gate)': ('none', 'none'),
         'DynamicCW (Degree-Only Gate)': ('degree_only', 'vector')
     }
+    if include_shuffled:
+        # Appended last, so the three original arms see the same RNG stream as before.
+        models['DynamicCW (Shuffled kappa Gate)'] = ('shuffled', 'vector')
     
     results = {}
     for name, (curv_type, gate_type) in models.items():
@@ -286,8 +289,10 @@ def run_bottleneck_transfer_task(num_samples=100, epochs=30, seed=42):
         
         def prepare_data(data_list):
             processed = []
-            for pyg, G, y in data_list:
-                cc, _ = lift_graph_to_cell_complex(pyg, max_cycle_length=4, curvature_type=curv_type)
+            for i, (pyg, G, y) in enumerate(data_list):
+                # seed only affects the 'shuffled' arm (reproducible within-graph permutation)
+                cc, _ = lift_graph_to_cell_complex(pyg, max_cycle_length=4, curvature_type=curv_type,
+                                                   seed=seed * 100000 + (0 if data_list is train_set else 50000) + i)
                 B1, B2 = get_incidence_matrices(cc)
                 edgelist = sorted([tuple(sorted(e)) for e in cc._G.edges])
                 frc_dict = cc.get_cell_attributes('curvature', rank=1)

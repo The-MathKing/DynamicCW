@@ -40,9 +40,17 @@ class CurvatureWeightedCellularConv(nn.Module):
         gating='vector', 
         dynamic_faces=True,
         use_residuals=True,
-        use_norm=True
+        use_norm=True,
+        aggregation='sum',
+        standardize_curvature=True
     ):
         super(CurvatureWeightedCellularConv, self).__init__()
+        # aggregation='sum' (default) is multiset-injective, matching 1-CWL.
+        # aggregation='mean' row-normalizes every incidence/adjacency operator, so
+        # degrees are not recoverable (weaker than 1-CWL; see paper Remark 1).
+        assert aggregation in ('sum', 'mean')
+        self.aggregation = aggregation
+        self.standardize_curvature = standardize_curvature
         self.in_channels = in_channels
         self.out_channels = out_channels
         self.gating = gating
@@ -103,8 +111,10 @@ class CurvatureWeightedCellularConv(nn.Module):
         else:
             inc_2 = None
 
-        # Standardize curvature per graph
-        if frc_weights is not None and frc_weights.shape[0] > 1:
+        # Standardize curvature per graph (standardize_curvature=False feeds raw kappa)
+        if frc_weights is not None and not self.standardize_curvature:
+            frc_norm = frc_weights
+        elif frc_weights is not None and frc_weights.shape[0] > 1:
             std = frc_weights.std()
             if std > 1e-6:
                 frc_norm = (frc_weights - frc_weights.mean()) / (std + 1e-5)
@@ -113,6 +123,9 @@ class CurvatureWeightedCellularConv(nn.Module):
         else:
             frc_norm = frc_weights if frc_weights is not None else torch.zeros((x_1.shape[0], 1), device=x_1.device)
             
+        if self.aggregation == 'mean':
+            return self._forward_mean(x_0, x_1, x_2, inc_1, inc_2, frc_norm)
+
         # 1. Edge Message Aggregation
         msg_up = 0.0
         if x_0 is not None and inc_1 is not None and inc_1.shape[1] > 0:
@@ -185,6 +198,39 @@ class CurvatureWeightedCellularConv(nn.Module):
             
         return x_0_new, x_1_new, x_2_new
 
+    @staticmethod
+    def _row_normalize(A):
+        deg = A.sum(dim=1, keepdim=True)
+        return A / torch.where(deg > 0, deg, torch.ones_like(deg))
+
+    def _update(self, x_old, raw, norm):
+        x_new = x_old + F.gelu(raw) if (self.use_residuals and x_old.shape == raw.shape) else F.gelu(raw)
+        return norm(x_new) if self.use_norm else x_new
+
+    def _forward_mean(self, x_0, x_1, x_2, inc_1, inc_2, frc_norm):
+        """Same layer as forward(), but every aggregation is a mean (row-normalized operator)."""
+        A1 = inc_1.to_dense() if inc_1.is_sparse else inc_1
+        has_faces = inc_2 is not None and x_2 is not None and x_2.shape[0] > 0
+        A2 = (inc_2.to_dense() if inc_2.is_sparse else inc_2) if has_faces else None
+        rn = self._row_normalize
+
+        msg_edge = rn(A1.t()) @ self.lin_down(x_0) + rn(A1.t() @ A1) @ self.lin_adj_down(x_1)
+        if has_faces:
+            msg_edge = msg_edge + rn(A2) @ self.lin_up(x_2) + rn(A2 @ A2.t()) @ self.lin_adj_up(x_1)
+        edge_raw = self.mlp_edge(x_1, msg_edge)
+        if self.gating in ['scalar', 'vector']:
+            edge_raw = edge_raw * torch.sigmoid(self.gate_proj(torch.cat([x_1, frc_norm], dim=-1)))
+        x_1_new = self._update(x_1, edge_raw, self.norm_edge if self.use_norm else None)
+
+        # Node/face updates read the pre-update edge states, as in forward().
+        x_0_new = self._update(x_0, self.mlp_node(x_0, self.lin_edge_to_node(rn(A1) @ x_1)),
+                               self.norm_node if self.use_norm else None)
+        x_2_new = x_2
+        if self.dynamic_faces and has_faces:
+            x_2_new = self._update(x_2, self.mlp_face(x_2, self.lin_edge_to_face(rn(A2.t()) @ x_1)),
+                                   self.norm_face if self.use_norm else None)
+        return x_0_new, x_1_new, x_2_new
+
 class DynamicCWNet(nn.Module):
     def __init__(
         self,
@@ -197,6 +243,8 @@ class DynamicCWNet(nn.Module):
         dynamic_faces=True,
         use_residuals=True,
         use_norm=True,
+        aggregation='sum',
+        standardize_curvature=True,
         edge_feature_dim=8,
         face_feature_dim=1,
         task_type='regression'
@@ -219,7 +267,9 @@ class DynamicCWNet(nn.Module):
                 gating=gating, 
                 dynamic_faces=dynamic_faces,
                 use_residuals=use_residuals,
-                use_norm=use_norm
+                use_norm=use_norm,
+                aggregation=aggregation,
+                standardize_curvature=standardize_curvature
             )
             for _ in range(num_layers)
         ])

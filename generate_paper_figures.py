@@ -93,23 +93,31 @@ def generate_dirichlet_plot():
     fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(11, 4.5), dpi=300)
     layers = np.arange(len(list(data.values())[0]['mean_node_energy']))
     
-    markers = {'DynamicCW (With Residuals & Norm)': 'o', 
+    markers = {'DynamicCW (With Residuals & Norm)': 'o',
                'DynamicCW (Unregularized, No Residuals)': 's',
-               'DynamicCW (No Gate, With Residuals)': '^'}
-    colors = {'DynamicCW (With Residuals & Norm)': '#d95f02', 
+               'DynamicCW (No Gate, With Residuals)': '^',
+               'DynamicCW (No Gate, No Residuals)': 'D'}
+    colors = {'DynamicCW (With Residuals & Norm)': '#d95f02',
               'DynamicCW (Unregularized, No Residuals)': '#7570b3',
-              'DynamicCW (No Gate, With Residuals)': '#2b5c8f'}
+              'DynamicCW (No Gate, With Residuals)': '#2b5c8f',
+              'DynamicCW (No Gate, No Residuals)': '#1b9e77'}
               
+    # Legend names match the variant names used in the paper text.
+    labels = {'DynamicCW (With Residuals & Norm)': 'AF$_3$-gated, residuals + LayerNorm',
+              'DynamicCW (Unregularized, No Residuals)': 'AF$_3$-gated, no residuals/LayerNorm',
+              'DynamicCW (No Gate, With Residuals)': 'Un-gated, residuals + LayerNorm',
+              'DynamicCW (No Gate, No Residuals)': 'Un-gated, no residuals/LayerNorm'}
+
     for name, vals in data.items():
         m_e0 = vals['mean_node_energy']
         std_e0 = vals['std_node_energy']
         m_e1 = vals['mean_edge_energy']
         std_e1 = vals['std_edge_energy']
         
-        ax1.plot(layers, m_e0, label=name, marker=markers.get(name, 'o'), color=colors.get(name, 'black'), lw=2)
+        ax1.plot(layers, m_e0, label=labels.get(name, name), marker=markers.get(name, 'o'), color=colors.get(name, 'black'), lw=2)
         ax1.fill_between(layers, np.maximum(1e-4, np.array(m_e0) - np.array(std_e0)), np.array(m_e0) + np.array(std_e0), alpha=0.15, color=colors.get(name, 'black'))
 
-        ax2.plot(layers, m_e1, label=name, marker=markers.get(name, 'o'), color=colors.get(name, 'black'), lw=2)
+        ax2.plot(layers, m_e1, label=labels.get(name, name), marker=markers.get(name, 'o'), color=colors.get(name, 'black'), lw=2)
         ax2.fill_between(layers, np.maximum(0, np.array(m_e1) - np.array(std_e1)), np.array(m_e1) + np.array(std_e1), alpha=0.15, color=colors.get(name, 'black'))
 
     ax1.set_xlabel('Cellular Layer $\ell$')
@@ -127,6 +135,46 @@ def generate_dirichlet_plot():
     plt.savefig('figures/fig3_dirichlet_energy.pdf')
     print("Saved figures/fig3_dirichlet_energy.png and .pdf")
 
+def generate_dirichlet_trained_plot():
+    """Camera-ready Fig. 1: node energy at initialization (NCI1) vs. after training (ZINC, depth 6)."""
+    init = json.load(open('results/dirichlet_energy_results.json'))
+    trained = json.load(open('results/reviewer_trained_dirichlet.json'))['configs']
+    names = {'DynamicCW (With Residuals & Norm)': 'AF$_3$-gated, residuals + LayerNorm',
+             'DynamicCW (Unregularized, No Residuals)': 'AF$_3$-gated, no residuals/LayerNorm',
+             'DynamicCW (No Gate, With Residuals)': 'Un-gated, residuals + LayerNorm',
+             'DynamicCW (No Gate, No Residuals)': 'Un-gated, no residuals/LayerNorm'}
+    style = {'AF$_3$-gated, residuals + LayerNorm': ('o', '#d95f02'),
+             'AF$_3$-gated, no residuals/LayerNorm': ('s', '#7570b3'),
+             'Un-gated, residuals + LayerNorm': ('^', '#2b5c8f'),
+             'Un-gated, no residuals/LayerNorm': ('D', '#1b9e77')}
+    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(11, 4.2), dpi=300)
+    for key, vals in init.items():
+        lab = names[key]; mk, c = style[lab]
+        m, s = np.array(vals['mean_node_energy']), np.array(vals['std_node_energy'])
+        L = np.arange(len(m))
+        ax1.plot(L, m, label=lab, marker=mk, color=c, lw=2)
+        ax1.fill_between(L, np.maximum(1e-4, m - s), m + s, alpha=0.15, color=c)
+    for key, vals in trained.items():
+        lab = key.replace('AF3', 'AF$_3$'); mk, c = style[lab]
+        m, s = np.array(vals['mean_e0']), np.array(vals['std_e0'])
+        L = np.arange(len(m))
+        ax2.plot(L, m, label=lab, marker=mk, color=c, lw=2)
+        ax2.fill_between(L, np.maximum(1e-4, m - s), m + s, alpha=0.15, color=c)
+    for ax, title in [(ax1, '(a) At initialization (NCI1, 10 layers)'),
+                      (ax2, '(b) After training (ZINC, 6 layers, 10 seeds)')]:
+        ax.set_yscale('log')
+        ax.set_ylim(5e-4, 4)
+        ax.set_xlabel(r'Cellular Layer $\ell$')
+        ax.set_ylabel(r'Node Dirichlet Energy $\mathcal{E}_0(H_V^{(\ell)})$')
+        ax.set_title(title)
+    ax1.legend(frameon=True, fontsize=9, loc='lower left')
+    plt.tight_layout()
+    plt.savefig('figures/fig1_dirichlet_init_vs_trained.png', dpi=300)
+    plt.savefig('figures/fig1_dirichlet_init_vs_trained.pdf')
+    print('Saved figures/fig1_dirichlet_init_vs_trained.{png,pdf}')
+
+
 if __name__ == '__main__':
     generate_ablation_plot()
     generate_dirichlet_plot()
+    generate_dirichlet_trained_plot()
